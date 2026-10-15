@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "RideColab",
+    "slug": "ridecolab",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "ridecolab",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "dev.ridecolab.app"
+    },
+    "android": {
+      "package": "dev.ridecolab.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F1B33",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
