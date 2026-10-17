@@ -38,8 +38,19 @@ const serverStartTime = Date.now();
  *                     cold_start_ms:
  *                       type: number
  */
-router.get('/health', (_req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => {
   const now = Date.now();
+
+  // DB connectivity check
+  let db: { status: string; postgis?: string } = { status: 'unconfigured' };
+  try {
+    const { pool } = await import('~/db/pool');
+    const result = await pool.query<{ version: string }>('SELECT PostGIS_Version() AS version');
+    db = { status: 'ok', postgis: result.rows[0]?.version ?? 'unknown' };
+  } catch (err) {
+    db = { status: 'error' };
+  }
+
   res.json({
     success: true,
     data: {
@@ -49,9 +60,11 @@ router.get('/health', (_req: Request, res: Response) => {
       ts: new Date().toISOString(),
       uptime_s: Math.floor(process.uptime()),
       cold_start_ms: now - serverStartTime,
+      db,
     },
   });
 });
+
 
 /**
  * @swagger

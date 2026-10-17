@@ -10,7 +10,7 @@
 | Phase | Name | Status | Commit | Approved By | Date |
 |---|---|---|---|---|---|
 | 1 | Foundation | ✅ Complete | `c5259e1` | User | 2026-10-15 |
-| 2 | Database and Server Core | ⏳ Not started | — | — | — |
+| 2 | Database and Server Core | ✅ Complete | `phase-2` | User | 2026-10-17 |
 | 3 | Auth and Profiles | ⏳ Not started | — | — | — |
 | 4 | Mobile App Shell and Design System | ⏳ Not started | — | — | — |
 | 5 | Maps, Geocoding, Routing and Trip Posting | ⏳ Not started | — | — | — |
@@ -32,6 +32,50 @@
 ## Detailed Phase Reports
 
 *Reports are appended here after each phase is completed.*
+
+---
+
+### Phase 2 Report
+**Status**: ✅ Complete — 2026-10-17
+
+**What was built:**
+- Neon PostgreSQL + PostGIS provisioned (`polished-meadow-07571596`, us-east-2)
+- Full schema migration (`001_initial_schema.sql`) — 23 tables with PostGIS geography types, GiST spatial indexes, `updated_at` triggers, and all FK constraints
+- Migration runner (`src/db/migrate.ts`) — idempotent, tracks applied migrations in `_migrations` table
+- PostgreSQL pool (`src/db/pool.ts`) — `pg` driver, `query()` helper, `withTransaction()` wrapper
+- CacheAdapter interface (`src/db/cache.ts`) — `InMemoryAdapter` (fallback) + `UpstashAdapter` (when `REDIS_URL` set), chosen automatically at startup
+- Seed script (`src/db/seed.ts`) — 30 Pune landmarks, 33 vehicles (ARAI figures), 4 fuel prices, 10 app_config rows, admin user, 2 demo users, Zeal College community. Safe to re-run.
+- Health endpoint updated — now pings DB and returns PostGIS version in response
+- DB integration tests (`tests/db.test.ts`) — 10 new tests covering PostGIS, all 23 tables, seed data, app_config keys, admin user
+- New npm scripts: `db:migrate`, `db:seed`
+
+**Key tables created:**
+`app_config`, `users`, `trust_scores`, `emergency_contacts`, `user_declarations`, `refresh_tokens`, `vehicle_catalog`, `vehicles`, `fuel_prices`, `landmarks`, `route_cache`, `communities`, `community_members`, `trips`, `bookings`, `live_locations`, `messages`, `reviews`, `notifications`, `sos_alerts`, `geocoding_cache`, `admin_audit_log`
+
+**Test results:**
+```
+PASS tests/db.test.ts (7.862 s)
+  PostGIS version: 3.6 USE_GEOS=1 USE_PROJ=1 USE_STATS=1
+PASS tests/health.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       14 passed, 14 total
+```
+
+**TypeScript:** `tsc --noEmit` → 0 errors
+
+**Verified end-to-end:**
+- `SELECT PostGIS_Version()` → `3.6 USE_GEOS=1 USE_PROJ=1 USE_STATS=1`
+- `SELECT COUNT(*) FROM fuel_prices` → 4
+- `SELECT COUNT(*) FROM landmarks` → 30
+- `SELECT COUNT(*) FROM vehicle_catalog` → 33
+- `GET /api/v1/health` → `{"db":{"status":"ok","postgis":"3.6 ..."}}`
+- Server starts with `REDIS_URL=""` → in-memory fallback, health returns 200 ✅
+
+**Known issues / notes:**
+- SSL warning from `pg` about future `sslmode` behaviour — cosmetic only, no action needed until pg v9.
+- `neon deploy` requires browser OAuth login — skipped since `DATABASE_URL` was set directly in `.env`. Not needed for local dev.
+- Demo users use password `Demo@1234` — must be rotated before any public deployment.
 
 ---
 
