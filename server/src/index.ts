@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import pinoHttp from 'pino-http';
+import passport from 'passport';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
@@ -10,6 +11,9 @@ import { APP_NAME, env, allowedOrigins } from '~/config/app';
 import { logger } from '~/utils/logger';
 import { errorHandler } from '~/middleware/errorHandler';
 import healthRouter from '~/routes/health';
+import authRouter from '~/routes/auth';
+import usersRouter from '~/routes/users';
+import catalogRouter, { myVehiclesRouter } from '~/routes/catalog';
 
 const app = express();
 
@@ -48,6 +52,9 @@ app.use(express.urlencoded({ extended: true }));
 // ─── Request logging ──────────────────────────────────────────
 app.use(pinoHttp({ logger }));
 
+// ─── Passport (stateless — no sessions) ──────────────────────
+app.use(passport.initialize());
+
 // ─── Swagger API docs ─────────────────────────────────────────
 const swaggerOptions: swaggerJsdoc.Options = {
   definition: {
@@ -76,6 +83,11 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ─── Routes ───────────────────────────────────────────────────
 app.use('/api/v1', healthRouter);
+app.use('/auth', authRouter);
+// catalog has no auth — must be before usersRouter
+app.use('/api/v1/catalog', catalogRouter);
+app.use('/api/v1/users/me/vehicles', myVehiclesRouter);
+app.use('/api/v1/users', usersRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────
 app.use((_req, res) => {
@@ -88,12 +100,13 @@ app.use((_req, res) => {
 // ─── Global error handler ────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Start server ─────────────────────────────────────────────
-const PORT = env.PORT;
-
-app.listen(PORT, () => {
-  logger.info(`🚀 ${APP_NAME} server running on port ${PORT} [${env.NODE_ENV}]`);
-  logger.info(`📖 API docs: http://localhost:${PORT}/api/v1/docs`);
-});
+// ─── Start server (skip in test to avoid EADDRINUSE) ─────────
+if (env.NODE_ENV !== 'test') {
+  const PORT = env.PORT;
+  app.listen(PORT, () => {
+    logger.info(`🚀 ${APP_NAME} server running on port ${PORT} [${env.NODE_ENV}]`);
+    logger.info(`📖 API docs: http://localhost:${PORT}/api/v1/docs`);
+  });
+}
 
 export default app;

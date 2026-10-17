@@ -11,7 +11,7 @@
 |---|---|---|---|---|---|
 | 1 | Foundation | ✅ Complete | `c5259e1` | User | 2026-10-15 |
 | 2 | Database and Server Core | ✅ Complete | `phase-2` | User | 2026-10-17 |
-| 3 | Auth and Profiles | ⏳ Not started | — | — | — |
+| 3 | Auth and Profiles | ✅ Complete | `phase-3` | User | 2026-10-18 |
 | 4 | Mobile App Shell and Design System | ⏳ Not started | — | — | — |
 | 5 | Maps, Geocoding, Routing and Trip Posting | ⏳ Not started | — | — | — |
 | 6 | Fare Engine | ⏳ Not started | — | — | — |
@@ -32,6 +32,38 @@
 ## Detailed Phase Reports
 
 *Reports are appended here after each phase is completed.*
+
+---
+
+### Phase 3 Report
+**Status**: ✅ Complete — 2026-10-18
+
+**What was built:**
+- JWT auth: register (bcrypt cost 12), login, refresh token rotation (SHA-256 hashed in DB), logout, consent recording
+- Google OAuth 2.0 via Passport (web application client, stateless — no sessions)
+- `authenticate` middleware + `requireAdmin` guard
+- `GET/PATCH/DELETE /api/v1/users/me` — profile, mode switch, DPDP anonymisation
+- Emergency contacts CRUD (max 3)
+- Licence + insurance self-declaration (upsert)
+- Vehicle catalog browser (`GET /api/v1/catalog/vehicles`) — no auth, filter by type/make/fuel_type
+- My vehicles: add/list/soft-delete (`/api/v1/users/me/vehicles`)
+- Express type augmentation (`src/types/express.d.ts`) compatible with Passport
+- `app.listen()` guarded by `NODE_ENV !== 'test'` — no more EADDRINUSE in parallel test runs
+
+**New files:**
+`src/middleware/authenticate.ts`, `src/services/auth.ts`, `src/routes/auth.ts`, `src/routes/users.ts`, `src/routes/catalog.ts`, `src/types/express.d.ts`, `tests/auth.test.ts`
+
+**Test results:**
+```
+PASS tests/auth.test.ts   (16.453 s)  — 24 tests
+PASS tests/db.test.ts     (5.139 s)   — 10 tests
+PASS tests/health.test.ts              — 4 tests
+
+Test Suites: 3 passed, 3 total
+Tests:       38 passed, 38 total
+```
+
+**TypeScript:** `tsc --noEmit` → 0 errors
 
 ---
 
