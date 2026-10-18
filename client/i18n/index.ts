@@ -1,0 +1,202 @@
+// i18n scaffold — English, Hindi, Marathi
+// Usage: import { t } from '@/i18n'; t('auth.login')
+
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import * as Localization from 'expo-localization';
+
+const en = {
+  common: {
+    loading: 'Loading…',
+    retry: 'Retry',
+    cancel: 'Cancel',
+    save: 'Save',
+    done: 'Done',
+    next: 'Next',
+    back: 'Back',
+    error: 'Something went wrong',
+    noData: 'Nothing here yet',
+    serverWaking: 'Waking up the server…',
+    serverWakingSubtitle: 'Free hosting sleeps after inactivity. Ready in ~30 s.',
+  },
+  auth: {
+    login: 'Sign In',
+    register: 'Create Account',
+    email: 'Email address',
+    password: 'Password',
+    name: 'Full name',
+    forgotPassword: 'Forgot password?',
+    noAccount: "Don't have an account?",
+    haveAccount: 'Already have an account?',
+    signUp: 'Sign up',
+    signIn: 'Sign in',
+    orContinueWith: 'or continue with',
+    continueWithGoogle: 'Continue with Google',
+    tagline: 'Share the road. Split the cost.\nNobody profits.',
+    disclaimer: 'Not a taxi service. No commission. Student project.',
+    consentTitle: 'Quick note before you ride',
+    consentBody:
+      'RideColab is a cost-sharing app. Riders never earn a profit. By continuing you agree to our terms and the DPDP Act data policy.',
+    consentAgree: 'I understand, continue',
+  },
+  tabs: {
+    home: 'Home',
+    activity: 'Activity',
+    community: 'Community',
+    savings: 'Savings',
+    account: 'Account',
+  },
+  home: {
+    findARide: 'Find a ride',
+    offerARide: 'Offer a ride',
+    rider: 'Rider',
+    passenger: 'Passenger',
+    whereToGo: 'Where are you going?',
+    pickupPlaceholder: 'Your pickup point',
+    destinationPlaceholder: 'Destination',
+  },
+  account: {
+    title: 'Account',
+    darkMode: 'Dark mode',
+    language: 'Language',
+    emergencyContacts: 'Emergency contacts',
+    signOut: 'Sign out',
+    version: 'Version',
+    legal: 'Legal note',
+    trustScore: 'Trust score',
+  },
+};
+
+const hi: typeof en = {
+  common: {
+    loading: 'लोड हो रहा है…',
+    retry: 'पुनः प्रयास करें',
+    cancel: 'रद्द करें',
+    save: 'सहेजें',
+    done: 'हो गया',
+    next: 'अगला',
+    back: 'पीछे',
+    error: 'कुछ गलत हो गया',
+    noData: 'अभी कुछ नहीं है',
+    serverWaking: 'सर्वर जाग रहा है…',
+    serverWakingSubtitle: 'फ्री होस्टिंग निष्क्रियता के बाद सो जाती है। ~30 सेकंड में तैयार।',
+  },
+  auth: {
+    login: 'साइन इन करें',
+    register: 'खाता बनाएं',
+    email: 'ईमेल पता',
+    password: 'पासवर्ड',
+    name: 'पूरा नाम',
+    forgotPassword: 'पासवर्ड भूल गए?',
+    noAccount: 'खाता नहीं है?',
+    haveAccount: 'पहले से खाता है?',
+    signUp: 'साइन अप',
+    signIn: 'साइन इन',
+    orContinueWith: 'या इससे जारी रखें',
+    continueWithGoogle: 'Google से जारी रखें',
+    tagline: 'सड़क साझा करें। लागत बाँटें।\nकोई मुनाफा नहीं।',
+    disclaimer: 'टैक्सी सेवा नहीं। कोई कमीशन नहीं। छात्र परियोजना।',
+    consentTitle: 'सवारी से पहले एक नोट',
+    consentBody:
+      'RideColab एक लागत-साझाकरण ऐप है। राइडर कभी लाभ नहीं कमाते। जारी रखकर आप हमारी शर्तों और DPDP अधिनियम डेटा नीति से सहमत होते हैं।',
+    consentAgree: 'मैं समझता हूँ, जारी रखें',
+  },
+  tabs: {
+    home: 'होम',
+    activity: 'गतिविधि',
+    community: 'समुदाय',
+    savings: 'बचत',
+    account: 'खाता',
+  },
+  home: {
+    findARide: 'राइड खोजें',
+    offerARide: 'राइड दें',
+    rider: 'राइडर',
+    passenger: 'यात्री',
+    whereToGo: 'आप कहाँ जा रहे हैं?',
+    pickupPlaceholder: 'आपका पिकअप पॉइंट',
+    destinationPlaceholder: 'गंतव्य',
+  },
+  account: {
+    title: 'खाता',
+    darkMode: 'डार्क मोड',
+    language: 'भाषा',
+    emergencyContacts: 'आपातकालीन संपर्क',
+    signOut: 'साइन आउट',
+    version: 'संस्करण',
+    legal: 'कानूनी नोट',
+    trustScore: 'विश्वास स्कोर',
+  },
+};
+
+const mr: typeof en = {
+  common: {
+    loading: 'लोड होत आहे…',
+    retry: 'पुन्हा प्रयत्न करा',
+    cancel: 'रद्द करा',
+    save: 'जतन करा',
+    done: 'झाले',
+    next: 'पुढे',
+    back: 'मागे',
+    error: 'काहीतरी चूक झाली',
+    noData: 'आता काहीच नाही',
+    serverWaking: 'सर्व्हर जागा होत आहे…',
+    serverWakingSubtitle: 'फ्री होस्टिंग निष्क्रियतेनंतर झोपते. ~30 से. मध्ये तयार.',
+  },
+  auth: {
+    login: 'साइन इन करा',
+    register: 'खाते तयार करा',
+    email: 'ईमेल पत्ता',
+    password: 'पासवर्ड',
+    name: 'पूर्ण नाव',
+    forgotPassword: 'पासवर्ड विसरलात?',
+    noAccount: 'खाते नाही?',
+    haveAccount: 'आधीच खाते आहे?',
+    signUp: 'साइन अप',
+    signIn: 'साइन इन',
+    orContinueWith: 'किंवा यासह सुरू ठेवा',
+    continueWithGoogle: 'Google सह सुरू ठेवा',
+    tagline: 'रस्ता सामायिक करा. खर्च वाटा.\nकोणाचाही नफा नाही.',
+    disclaimer: 'टॅक्सी सेवा नाही. कोणताही कमिशन नाही. विद्यार्थी प्रकल्प.',
+    consentTitle: 'राइड करण्यापूर्वी एक टीप',
+    consentBody:
+      'RideColab हे खर्च-सामायिकरण ॲप आहे. राइडर कधीही नफा कमवत नाहीत. सुरू ठेवून तुम्ही आमच्या अटी आणि DPDP कायदा डेटा धोरणाशी सहमत आहात.',
+    consentAgree: 'मला समजते, सुरू ठेवा',
+  },
+  tabs: {
+    home: 'होम',
+    activity: 'क्रियाकलाप',
+    community: 'समुदाय',
+    savings: 'बचत',
+    account: 'खाते',
+  },
+  home: {
+    findARide: 'राइड शोधा',
+    offerARide: 'राइड द्या',
+    rider: 'राइडर',
+    passenger: 'प्रवासी',
+    whereToGo: 'तुम्ही कुठे जात आहात?',
+    pickupPlaceholder: 'तुमचा पिकअप पॉइंट',
+    destinationPlaceholder: 'गंतव्य',
+  },
+  account: {
+    title: 'खाते',
+    darkMode: 'डार्क मोड',
+    language: 'भाषा',
+    emergencyContacts: 'आणीबाणी संपर्क',
+    signOut: 'साइन आउट',
+    version: 'आवृत्ती',
+    legal: 'कायदेशीर टीप',
+    trustScore: 'विश्वास स्कोर',
+  },
+};
+
+i18n.use(initReactI18next).init({
+  resources: { en: { translation: en }, hi: { translation: hi }, mr: { translation: mr } },
+  lng: Localization.getLocales()[0]?.languageCode ?? 'en',
+  fallbackLng: 'en',
+  interpolation: { escapeValue: false },
+});
+
+export default i18n;
+export { useTranslation } from 'react-i18next';
