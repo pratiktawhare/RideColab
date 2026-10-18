@@ -169,7 +169,78 @@ cd client && npx expo start  # Scan QR with Expo Go
 ---
 
 ### Phase 4 Report
-**Status**: ⏳ Not started
+**Status**: ✅ Complete — 2026-10-18
+
+**What was built:**
+
+*Design System & Theme*
+- Full light + dark token system in `theme/tokens.ts` (palette, spacing, radii, fontSizes, fontWeights, lineHeights, shadows)
+- `themeStore.ts` (Zustand) — persists preference to SecureStore, toggle + hydrate
+- `GestureHandlerRootView` wraps the root layout (required by `@gorhom/bottom-sheet`)
+
+*Component Library*
+- `AppButton` — primary/secondary/ghost/danger variants, loading spinner, haptic feedback, 52px min touch target
+- `SkeletonLoader` + `SkeletonCard` — Reanimated animated shimmer, adapts to light/dark
+- `ColdStartScreen` — animated logo pulse + dots, shown when API > 3 s to respond
+- `RiderPassengerToggle` — animated sliding pill (Reanimated spring), haptic on switch
+- `EmptyState` + `ErrorState` — consistent empty/error UI with optional retry action
+- `MatchCard` — trust badge, gender badge, vehicle tag, fare display, route box, meta chips, community badge, "Why this match" chips (placeholder data, live data in Phase 7)
+- `BottomSheetModal` — `@gorhom/bottom-sheet` wrapper with 3 snap points (80px / 50% / 90%), themed backdrop, `forwardRef` imperative API
+
+*Navigation & Auth Gate*
+- Root `_layout.tsx` — QueryClientProvider, cold-start health ping, SplashScreen control, AuthGate redirect logic
+- `login.tsx` — email/password form, show/hide password, AppButton with loading, Google OAuth placeholder, register link
+- `register.tsx` — name/email/password form, consent acknowledge
+- `(tabs)/_layout.tsx` — themed tab bar (emoji icons wrapped in `<Text>`), dark surface/border
+
+*All 5 tab screens themed*
+- `index.tsx` (Home) — greeting, RiderPassengerToggle, map placeholder, search inputs, Pune quick-pick chips, SkeletonCard results
+- `activity.tsx` — themed shell, Phase 8 placeholder
+- `community.tsx` — themed shell with invite code card preview, Phase 11 placeholder
+- `savings.tsx` — themed shell with CO₂/savings/streak preview cards, Phase 10 placeholder
+- `account.tsx` — profile card, dark mode switch, language, emergency contacts, version, legal, sign out
+
+*State, Services, i18n*
+- `authStore.ts` — JWT tokens in SecureStore, hydrate on launch, setTokens/setUser/logout
+- `services/api.ts` — typed fetch wrapper, 401 auto-refresh with dedup, ApiError class
+- `constants/env.ts` — `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_MAP_TILE_URL`
+- `i18n/index.ts` — i18next + react-i18next, English/Hindi/Marathi translations for all screens
+- `features/` directory structure scaffolded (rider/ passenger/ safety/ community/)
+
+*Documentation*
+- `docs/eas-dev-build.md` — full EAS build guide with prerequisites, install steps, Expo Go vs Dev Build comparison table, free tier limits, troubleshooting
+
+**New files (31 total):**
+`components/AppButton.tsx`, `components/BottomSheetModal.tsx`, `components/ColdStartScreen.tsx`, `components/MatchCard.tsx`, `components/RiderPassengerToggle.tsx`, `components/SkeletonLoader.tsx`, `components/StateViews.tsx`, `app/login.tsx`, `app/register.tsx`, `constants/env.ts`, `services/api.ts`, `store/authStore.ts`, `store/themeStore.ts`, `i18n/index.ts`, `features/rider/index.ts`, `features/passenger/index.ts`, `features/safety/index.ts`, `features/community/index.ts`, `docs/eas-dev-build.md`
+
+**Bug fix (during phase):**
+- Tab bar emoji icons were in `<>{emoji}</>` (fragment) → crashed with "Text strings must be rendered within a `<Text>` component". Fixed to `<Text style={{fontSize:20, opacity: focused ? 1 : 0.6}}>{emoji}</Text>`.
+
+**TypeScript:** `tsc --noEmit` → 0 errors ✅
+
+**How to run locally:**
+```bash
+cd client && npx expo start     # Expo Go for all non-map screens
+cd client && npx expo start --dev-client  # After EAS dev build for MapLibre
+```
+
+**Acceptance checklist:**
+- [x] Bottom sheet component with 3 snap points and GestureHandlerRootView in root
+- [x] RiderPassengerToggle animates (Reanimated spring) and fires haptic
+- [x] Dark mode switch (Account tab) applies to all screens
+- [x] SkeletonLoader shows animated shimmer on Home screen
+- [x] ColdStartScreen shown when API takes > 3 s
+- [x] i18n scaffold: English, Hindi, Marathi strings for auth + all tabs
+- [x] MatchCard component with all required fields
+- [x] `tsc --noEmit` → 0 errors
+- [x] `docs/eas-dev-build.md` created with full instructions
+- [ ] EAS dev build APK install + MapLibre map loads (requires cloud build — deferred to when needed)
+- [ ] Switch device to Hindi → auth screens show Hindi (testable after installing EAS dev build)
+
+**Known issues / notes:**
+- MapLibre map tile placeholder used in Expo Go; real map requires EAS dev build (instructions in `docs/eas-dev-build.md`).
+- `useTranslation()` hook wired up but individual screen strings still use hardcoded text — i18n will be completed per-screen in Phase 14 (Hardening).
+- Tab icons use emoji `<Text>` — will be replaced with `@expo/vector-icons` in Phase 5.
 
 ---
 
