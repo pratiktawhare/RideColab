@@ -20,10 +20,10 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe('POST /auth/register', () => {
+describe('POST /api/v1/auth/register', () => {
   it('creates a new user and returns tokens', async () => {
     const res = await request(app)
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({ email: TEST_EMAIL, password: TEST_PASSWORD, name: TEST_NAME });
 
     expect(res.status).toBe(201);
@@ -39,7 +39,7 @@ describe('POST /auth/register', () => {
 
   it('rejects duplicate email with 409', async () => {
     const res = await request(app)
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({ email: TEST_EMAIL, password: TEST_PASSWORD, name: TEST_NAME });
 
     expect(res.status).toBe(409);
@@ -48,7 +48,7 @@ describe('POST /auth/register', () => {
 
   it('rejects short password with 400', async () => {
     const res = await request(app)
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({ email: 'other@test.com', password: '123', name: 'X' });
 
     expect(res.status).toBe(400);
@@ -56,10 +56,10 @@ describe('POST /auth/register', () => {
   });
 });
 
-describe('POST /auth/login', () => {
+describe('POST /api/v1/auth/login', () => {
   it('returns tokens on valid credentials', async () => {
     const res = await request(app)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ email: TEST_EMAIL, password: TEST_PASSWORD });
 
     expect(res.status).toBe(200);
@@ -68,7 +68,7 @@ describe('POST /auth/login', () => {
 
   it('returns 401 on wrong password', async () => {
     const res = await request(app)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ email: TEST_EMAIL, password: 'wrongpassword' });
 
     expect(res.status).toBe(401);
@@ -77,17 +77,17 @@ describe('POST /auth/login', () => {
 
   it('returns 401 on unknown email', async () => {
     const res = await request(app)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ email: 'nobody@nope.com', password: 'anything' });
 
     expect(res.status).toBe(401);
   });
 });
 
-describe('POST /auth/refresh', () => {
+describe('POST /api/v1/auth/refresh', () => {
   it('rotates refresh token', async () => {
     const res = await request(app)
-      .post('/auth/refresh')
+      .post('/api/v1/auth/refresh')
       .send({ refresh_token: refreshToken });
 
     expect(res.status).toBe(200);
@@ -100,7 +100,7 @@ describe('POST /auth/refresh', () => {
 
   it('rejects invalid refresh token with 401', async () => {
     const res = await request(app)
-      .post('/auth/refresh')
+      .post('/api/v1/auth/refresh')
       .send({ refresh_token: 'invalid_token_xyz' });
 
     expect(res.status).toBe(401);
@@ -149,10 +149,10 @@ describe('PATCH /api/v1/users/me/settings', () => {
   });
 });
 
-describe('POST /auth/consent', () => {
+describe('POST /api/v1/auth/consent', () => {
   it('records consent', async () => {
     const res = await request(app)
-      .post('/auth/consent')
+      .post('/api/v1/auth/consent')
       .set('Authorization', `Bearer ${accessToken}`);
 
     expect(res.status).toBe(200);

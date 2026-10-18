@@ -83,7 +83,7 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ─── Routes ───────────────────────────────────────────────────
 app.use('/api/v1', healthRouter);
-app.use('/auth', authRouter);
+app.use('/api/v1/auth', authRouter);
 // catalog has no auth — must be before usersRouter
 app.use('/api/v1/catalog', catalogRouter);
 app.use('/api/v1/users/me/vehicles', myVehiclesRouter);
