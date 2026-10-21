@@ -33,6 +33,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b79af509-b6a7-40f8-bd43-e86f550a8591"
+      }
+    },
+    "owner": "pratiktawhare"
   }
 }
