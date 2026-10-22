@@ -42,6 +42,7 @@ const envSchema = z.object({
   EXPO_PUSH_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CALLBACK_URL: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

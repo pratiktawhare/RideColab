@@ -80,6 +80,11 @@ export const authApi = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
   consent: () => request<void>('/auth/consent', { method: 'POST' }),
+
+  googleIdToken: (idToken: string) =>
+    request<{ access_token: string; refresh_token: string; user: import('@/store/authStore').AuthUser }>(
+      '/auth/google/id-token', { method: 'POST', body: JSON.stringify({ id_token: idToken }) },
+    ),
 };
 
 // ─── User endpoints ───────────────────────────────────────────

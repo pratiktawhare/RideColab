@@ -113,8 +113,8 @@ Open the installed **RideColab (Dev)** app on your device and scan the QR code, 
 **Map doesn't show tiles**
 → Check `EXPO_PUBLIC_MAP_TILE_URL` in `client/.env`. Default is `https://tiles.openfreemap.org/styles/liberty` (free, no API key).
 
-**Google OAuth not working in dev build**
-→ Add your dev build's `android:package` to the Google Cloud Console OAuth redirect URIs.
+**Google OAuth Setup & Dev Build Integration**
+→ For complete instructions, saved EAS keystore fingerprints (SHA-1), Google Cloud Console setup, and code snippets, see [docs/google-oauth-setup.md](google-oauth-setup.md).
 
 ---
 

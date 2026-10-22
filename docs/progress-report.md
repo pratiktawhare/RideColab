@@ -12,7 +12,7 @@
 | 1 | Foundation | ✅ Complete | `c5259e1` | User | 2026-10-15 |
 | 2 | Database and Server Core | ✅ Complete | `phase-2` | User | 2026-10-17 |
 | 3 | Auth and Profiles | ✅ Complete | `phase-3` | User | 2026-10-18 |
-| 4 | Mobile App Shell and Design System | ✅ Complete | `phase-4` | User | 2026-10-18 |
+| 4 | Mobile App Shell and Design System | ✅ Complete | `501e024` | User | 2026-10-22 |
 | 5 | Maps, Geocoding, Routing and Trip Posting | ⏳ Not started | — | — | — |
 | 6 | Fare Engine | ⏳ Not started | — | — | — |
 | 7 | Matching Engine | ⏳ Not started | — | — | — |

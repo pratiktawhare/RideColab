@@ -7,7 +7,7 @@ import passport from 'passport';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
-import { APP_NAME, env, allowedOrigins } from '~/config/app';
+import { APP_NAME, env, allowedOrigins, isDev } from '~/config/app';
 import { logger } from '~/utils/logger';
 import { errorHandler } from '~/middleware/errorHandler';
 import healthRouter from '~/routes/health';
@@ -24,6 +24,7 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (curl, mobile apps, Postman)
       if (!origin) return callback(null, true);
+      if (isDev) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error(`CORS: origin ${origin} not allowed`));
     },

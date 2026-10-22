@@ -1,16 +1,35 @@
 // ─────────────────────────────────────────────────────────────
 // Login screen
 // ─────────────────────────────────────────────────────────────
-import React, { useState } from 'react';
+// Google Sign-In uses @react-native-google-signin/google-signin (native SDK).
+// This opens the native Google account picker — no browser, no redirect URI.
+// expo-auth-session was removed because Google blocks its browser-based OAuth
+// flow with Error 400: "doesn't comply with OAuth 2.0 policy for keeping apps secure."
+// ─────────────────────────────────────────────────────────────
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import {
+  GoogleSignin,
+  GoogleSigninButton,
+  statusCodes,
+  isErrorWithCode,
+} from '@react-native-google-signin/google-signin';
 import { AppButton } from '@/components/AppButton';
 import { useThemeStore } from '@/store/themeStore';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/services/api';
+import { env } from '@/constants/env';
+
+// Configure Google Sign-In once at module level.
+// webClientId = Web Client ID (used to get an ID token the server can verify).
+// The Android key is handled by the plugin using package name + SHA-1.
+GoogleSignin.configure({
+  webClientId: env.GOOGLE_CLIENT_ID,
+});
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -23,6 +42,51 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // ── Native Google Sign-In ──────────────────────────────────
+  const handleGoogleSignIn = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Notice', 'Google sign-in is supported on the mobile app.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      if (!idToken) {
+        Alert.alert('Sign in failed', 'No ID token returned from Google.');
+        return;
+      }
+      // Exchange ID token for RideColab JWTs via server
+      const data = await authApi.googleIdToken(idToken);
+      setTokens(data.access_token, data.refresh_token);
+      setUser(data.user);
+      // Navigation handled by root layout auth gate
+    } catch (err: unknown) {
+      if (isErrorWithCode(err)) {
+        switch (err.code) {
+          case statusCodes.SIGN_IN_CANCELLED:
+            // User cancelled — silent
+            break;
+          case statusCodes.IN_PROGRESS:
+            Alert.alert('Sign in in progress', 'Please wait...');
+            break;
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            Alert.alert('Play Services unavailable', 'Google Play Services is required for Google Sign-In.');
+            break;
+          default:
+            Alert.alert('Sign in failed', err.message ?? 'Unknown error');
+        }
+      } else {
+        const msg = err instanceof Error ? err.message : 'Google sign-in failed';
+        Alert.alert('Sign in failed', msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Email / password login ─────────────────────────────────
   const handleLogin = async () => {
     if (!email.trim() || !password) {
       Alert.alert('Missing fields', 'Please enter your email and password.');
@@ -99,18 +163,26 @@ export default function LoginScreen() {
 
           <AppButton label="Sign In" onPress={handleLogin} loading={loading} style={{ marginTop: 8 }} />
 
-          <View style={styles.dividerRow}>
-            <View style={[styles.divider, { backgroundColor: c.border }]} />
-            <Text style={[styles.dividerText, { color: c.textMuted }]}>or</Text>
-            <View style={[styles.divider, { backgroundColor: c.border }]} />
-          </View>
+          {/* Google Sign-In (native SDK — no browser) */}
+          {Platform.OS !== 'web' && (
+            <>
+              <View style={styles.dividerRow}>
+                <View style={[styles.divider, { backgroundColor: c.border }]} />
+                <Text style={[styles.dividerText, { color: c.textMuted }]}>or</Text>
+                <View style={[styles.divider, { backgroundColor: c.border }]} />
+              </View>
 
-          <AppButton
-            label="Continue with Google"
-            onPress={() => Alert.alert('Google OAuth', 'Opens browser flow. Set up in Phase 4 EAS build.')}
-            variant="secondary"
-            icon={<Text style={{ fontSize: 18 }}>G</Text>}
-          />
+              <TouchableOpacity
+                style={[styles.googleBtn, { borderColor: c.border, backgroundColor: c.surface }]}
+                onPress={handleGoogleSignIn}
+                disabled={loading}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={[styles.googleLabel, { color: c.text }]}>Continue with Google</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Footer */}
@@ -148,6 +220,18 @@ const styles = StyleSheet.create({
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   divider: { flex: 1, height: 1 },
   dividerText: { fontSize: 13 },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
+  },
+  googleIcon: { fontSize: 20, fontWeight: '700', color: '#4285F4' },
+  googleLabel: { fontSize: 15, fontWeight: '600' },
   footer: { flexDirection: 'row', justifyContent: 'center' },
   footerText: { fontSize: 14 },
   footerLink: { fontSize: 14, fontWeight: '600' },

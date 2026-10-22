@@ -40,7 +40,7 @@ passport.use(
     {
       clientID: env.GOOGLE_CLIENT_ID!,
       clientSecret: env.GOOGLE_CLIENT_SECRET!,
-      callbackURL: `http://localhost:${env.PORT}/auth/google/callback`,
+      callbackURL: env.GOOGLE_CALLBACK_URL ?? `http://localhost:${env.PORT}/api/v1/auth/google/callback`,
     },
     async (_accessToken, _refreshToken, profile: Profile, done) => {
       try {
@@ -278,6 +278,87 @@ router.get(
 
 router.get('/google/error', (_req, res) => {
   res.status(401).json({ success: false, error: { code: 'GOOGLE_AUTH_FAILED', message: 'Google authentication failed' } });
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /auth/google/id-token
+// Mobile-friendly: client sends Google ID token; server verifies
+// and returns RideColab JWT pair. No redirect URI needed.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /auth/google/id-token:
+ *   post:
+ *     summary: Exchange a Google ID token for RideColab JWTs
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [id_token]
+ *             properties:
+ *               id_token: { type: string }
+ *     responses:
+ *       200:
+ *         description: Login/register success
+ *       401:
+ *         description: Invalid Google token
+ */
+router.post('/google/id-token', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id_token } = req.body as { id_token?: string };
+    if (!id_token) {
+      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'id_token is required' } });
+      return;
+    }
+
+    // Verify with Google's tokeninfo endpoint
+    const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`);
+    if (!verifyRes.ok) {
+      res.status(401).json({ success: false, error: { code: 'GOOGLE_AUTH_FAILED', message: 'Invalid Google token' } });
+      return;
+    }
+
+    const payload = await verifyRes.json() as {
+      sub?: string;
+      email?: string;
+      name?: string;
+      aud?: string;
+      error_description?: string;
+    };
+
+    if (payload.error_description || !payload.sub || !payload.email) {
+      res.status(401).json({ success: false, error: { code: 'GOOGLE_AUTH_FAILED', message: 'Invalid Google token payload' } });
+      return;
+    }
+
+    // Optional: verify the token is for our app
+    if (env.GOOGLE_CLIENT_ID && payload.aud !== env.GOOGLE_CLIENT_ID) {
+      logger.warn({ aud: payload.aud }, 'Google token audience mismatch');
+      res.status(401).json({ success: false, error: { code: 'GOOGLE_AUTH_FAILED', message: 'Token audience mismatch' } });
+      return;
+    }
+
+    const result = await upsertGoogleUser({
+      googleId: payload.sub,
+      email: payload.email,
+      name: payload.name ?? payload.email!.split('@')[0] ?? 'Google User',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        user: result.user,
+        access_token: result.accessToken,
+        refresh_token: result.refreshToken,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

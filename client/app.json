@@ -16,7 +16,16 @@
       "adaptiveIcon": {
         "backgroundColor": "#0F1B33",
         "foregroundImage": "./assets/adaptive-icon.png"
-      }
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -29,7 +38,30 @@
       "expo-secure-store",
       "expo-font",
       "expo-splash-screen",
-      "expo-localization"
+      "expo-localization",
+      "expo-web-browser",
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "RideColab needs your location to match routes and provide live ride tracking."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "RideColab accesses your photos for licence, document, and profile photo upload."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0F1B33"
+        }
+      ],
+      "@maplibre/maplibre-react-native",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true
