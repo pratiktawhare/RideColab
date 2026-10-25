@@ -37,7 +37,7 @@ async function fetchOrsRoute(
     return null;
   }
 
-  const url = 'https://api.heigit.org/v2/directions/driving-car/geojson';
+  const url = 'https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson';
   logger.info({ originLat, originLng, destLat, destLng }, 'calling ORS directions');
 
   const body = {
