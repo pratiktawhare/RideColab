@@ -4,6 +4,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import pinoHttp from 'pino-http';
 import passport from 'passport';
+import cron from 'node-cron';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
@@ -14,6 +15,9 @@ import healthRouter from '~/routes/health';
 import authRouter from '~/routes/auth';
 import usersRouter from '~/routes/users';
 import catalogRouter, { myVehiclesRouter } from '~/routes/catalog';
+import geocodingRouter from '~/routes/geocoding';
+import tripsRouter from '~/routes/trips';
+import { resetWeeklyCounters, materialiseRecurringTrips } from '~/services/trips';
 
 const app = express();
 
@@ -89,6 +93,8 @@ app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/catalog', catalogRouter);
 app.use('/api/v1/users/me/vehicles', myVehiclesRouter);
 app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/geocoding', geocodingRouter);
+app.use('/api/v1/trips', tripsRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────
 app.use((_req, res) => {
@@ -107,6 +113,19 @@ if (env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     logger.info(`🚀 ${APP_NAME} server running on port ${PORT} [${env.NODE_ENV}]`);
     logger.info(`📖 API docs: http://localhost:${PORT}/api/v1/docs`);
+  });
+
+  // ─── Cron jobs ─────────────────────────────────────────────
+  // Reset weekly trip counters every Monday at 00:01
+  cron.schedule('1 0 * * 1', async () => {
+    logger.info('cron: resetting weekly trip counters');
+    await resetWeeklyCounters();
+  });
+
+  // Materialise recurring trips daily at 01:00
+  cron.schedule('0 1 * * *', async () => {
+    logger.info('cron: materialising recurring trips');
+    await materialiseRecurringTrips(7);
   });
 }
 

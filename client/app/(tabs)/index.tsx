@@ -1,26 +1,31 @@
 // ─────────────────────────────────────────────────────────────
-// Home screen — rider/passenger toggle, search inputs, map placeholder
+// Home screen — rider/passenger toggle, live place search, map placeholder
 // ─────────────────────────────────────────────────────────────
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, ScrollView, StyleSheet,
-  TouchableOpacity, Image,
+  View, Text, ScrollView, StyleSheet,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useThemeStore } from '@/store/themeStore';
 import { useAuthStore } from '@/store/authStore';
+import { useTripsStore } from '@/store/tripsStore';
 import { RiderPassengerToggle } from '@/components/RiderPassengerToggle';
-import { SkeletonCard } from '@/components/SkeletonLoader';
-import { userApi } from '@/services/api';
+import { PlaceSearch } from '@/components/PlaceSearch';
+import { AppButton } from '@/components/AppButton';
+import { userApi, GeoResult } from '@/services/api';
 
 export default function HomeScreen() {
+  const router = useRouter();
   const { theme } = useThemeStore();
   const { user, setUser } = useAuthStore();
+  const { setOrigin, setDestination } = useTripsStore();
   const c = theme.colors;
 
   const [mode, setMode] = useState<'rider' | 'passenger'>(user?.mode ?? 'passenger');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [origin, setOriginLocal] = useState<GeoResult | null>(null);
+  const [destination, setDestinationLocal] = useState<GeoResult | null>(null);
   const [switchingMode, setSwitchingMode] = useState(false);
 
   const handleModeChange = async (next: 'rider' | 'passenger') => {
@@ -30,10 +35,29 @@ export default function HomeScreen() {
       await userApi.switchMode(next);
       if (user) setUser({ ...user, mode: next });
     } catch {
-      // Revert on error
       setMode(mode);
     } finally {
       setSwitchingMode(false);
+    }
+  };
+
+  const handleOriginSelect = (r: GeoResult) => {
+    setOriginLocal(r);
+    setOrigin(r);
+  };
+
+  const handleDestinationSelect = (r: GeoResult) => {
+    setDestinationLocal(r);
+    setDestination(r);
+  };
+
+  const handleAction = () => {
+    if (mode === 'rider') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.push('/post-trip' as any);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.push('/post-trip' as any); // temp, will be search results screen (Phase 7)
     }
   };
 
@@ -46,18 +70,28 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={[styles.greeting, { color: c.textSecondary }]}>{greeting()}</Text>
             <Text style={[styles.userName, { color: c.text }]}>{user?.name?.split(' ')[0] ?? 'there'} 👋</Text>
           </View>
-          <View style={[styles.trustBadge, { backgroundColor: c.accentMuted }]}>
+          <TouchableOpacity
+            style={[styles.trustBadge, { backgroundColor: c.accentMuted }]}
+            onPress={() =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            router.push('/my-trips' as any)
+          }
+          >
             <Text style={[styles.trustText, { color: c.accent }]}>
               ⭐ {user?.trust_score ?? 50}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Mode toggle */}
@@ -77,62 +111,61 @@ export default function HomeScreen() {
             {mode === 'passenger' ? '🔍 Find a ride' : '🚗 Offer a ride'}
           </Text>
 
-          {/* From */}
-          <View style={[styles.inputRow, { backgroundColor: c.inputBg, borderColor: c.border }]}>
-            <Text style={styles.dot}>🟢</Text>
-            <TextInput
-              style={[styles.searchInput, { color: c.text }]}
-              value={from}
-              onChangeText={setFrom}
-              placeholder="Your pickup point"
-              placeholderTextColor={c.textMuted}
+          <View style={{ gap: 8, zIndex: 20 }}>
+            <PlaceSearch
+              label="Your pickup point"
+              value={origin?.label ?? ''}
+              onSelect={handleOriginSelect}
+              dotColor="🟢"
+            />
+            <View style={[styles.connector, { backgroundColor: c.border }]} />
+            <PlaceSearch
+              label="Where are you going?"
+              value={destination?.label ?? ''}
+              onSelect={handleDestinationSelect}
+              dotColor="🔴"
             />
           </View>
 
-          {/* Connector */}
-          <View style={[styles.connector, { backgroundColor: c.border }]} />
-
-          {/* To */}
-          <View style={[styles.inputRow, { backgroundColor: c.inputBg, borderColor: c.border }]}>
-            <Text style={styles.dot}>🔴</Text>
-            <TextInput
-              style={[styles.searchInput, { color: c.text }]}
-              value={to}
-              onChangeText={setTo}
-              placeholder="Where are you going?"
-              placeholderTextColor={c.textMuted}
-            />
-          </View>
-
-          {/* Quick picks */}
-          <Text style={[styles.sectionLabel, { color: c.textSecondary }]}>Quick picks — Pune</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-            {['Hinjewadi', 'Kothrud', 'Viman Nagar', 'Baner', 'Hadapsar', 'Pimpri'].map((place) => (
-              <TouchableOpacity
-                key={place}
-                style={[styles.chip, { backgroundColor: c.accentMuted, borderColor: c.accent }]}
-                onPress={() => setTo(place)}
-              >
-                <Text style={[styles.chipText, { color: c.accent }]}>{place}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <AppButton
+            label={mode === 'rider' ? 'Post this trip →' : 'Search rides →'}
+            onPress={handleAction}
+            variant="primary"
+            style={{ marginTop: 4 }}
+          />
         </View>
 
-        {/* Results placeholder */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>
-            {mode === 'passenger' ? 'Available rides' : 'Your trips'}
-          </Text>
-          <SkeletonCard />
-          <SkeletonCard />
+        {/* Rider quick actions */}
+        {mode === 'rider' && (
+          <View style={styles.quickRow}>
+            <TouchableOpacity
+              style={[styles.quickCard, { backgroundColor: c.surface, borderColor: c.border }]}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onPress={() => router.push('/post-trip' as any)}
+            >
+              <Text style={styles.quickIcon}>🚗</Text>
+              <Text style={[styles.quickLabel, { color: c.text }]}>Post a trip</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.quickCard, { backgroundColor: c.surface, borderColor: c.border }]}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onPress={() => router.push('/my-trips' as any)}
+            >
+              <Text style={styles.quickIcon}>📋</Text>
+              <Text style={[styles.quickLabel, { color: c.text }]}>My trips</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Coming soon placeholder */}
+        {mode === 'passenger' && (
           <View style={[styles.comingSoon, { backgroundColor: c.surface, borderColor: c.border }]}>
-            <Text style={{ fontSize: 32 }}>🚀</Text>
+            <Text style={{ fontSize: 32 }}>🔍</Text>
             <Text style={[styles.comingSoonText, { color: c.textSecondary }]}>
-              Trip matching coming in Phase 7
+              Ride matching coming in Phase 7
             </Text>
           </View>
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -147,23 +180,21 @@ const styles = StyleSheet.create({
   trustBadge: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   trustText: { fontSize: 13, fontWeight: '700' },
   mapPlaceholder: {
-    height: 180, borderRadius: 20, borderWidth: 1,
+    height: 160, borderRadius: 20, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', gap: 8,
   },
-  mapEmoji: { fontSize: 40 },
+  mapEmoji: { fontSize: 36 },
   mapLabel: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-  searchCard: { borderRadius: 20, padding: 16, borderWidth: 1, gap: 10 },
+  searchCard: { borderRadius: 20, padding: 16, borderWidth: 1, gap: 12, zIndex: 10 },
   searchTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, height: 48, gap: 10 },
-  dot: { fontSize: 12 },
-  searchInput: { flex: 1, fontSize: 15 },
   connector: { width: 2, height: 8, marginLeft: 17, borderRadius: 1 },
-  sectionLabel: { fontSize: 12, fontWeight: '600', marginTop: 4 },
-  chips: { marginHorizontal: -4 },
-  chip: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, marginHorizontal: 4 },
-  chipText: { fontSize: 13, fontWeight: '500' },
-  section: { gap: 12 },
-  sectionTitle: { fontSize: 17, fontWeight: '700' },
+  quickRow: { flexDirection: 'row', gap: 12 },
+  quickCard: {
+    flex: 1, borderRadius: 16, borderWidth: 1, padding: 16,
+    alignItems: 'center', gap: 8,
+  },
+  quickIcon: { fontSize: 28 },
+  quickLabel: { fontSize: 13, fontWeight: '600' },
   comingSoon: { borderRadius: 16, padding: 24, borderWidth: 1, alignItems: 'center', gap: 8 },
   comingSoonText: { fontSize: 14, textAlign: 'center' },
 });

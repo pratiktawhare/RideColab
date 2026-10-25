@@ -104,6 +104,80 @@ export const catalogApi = {
   },
 };
 
+// ─── Geocoding endpoints ──────────────────────────────────────
+export interface GeoResult {
+  label: string;
+  lat: number;
+  lng: number;
+  source: 'landmark' | 'cache' | 'ors';
+}
+
+export const geocodingApi = {
+  landmarks: () => request<GeoResult[]>('/geocoding/landmarks'),
+  search: (q: string) => {
+    const params = new URLSearchParams({ q }).toString();
+    return request<GeoResult[]>(`/geocoding/search?${params}`);
+  },
+};
+
+// ─── Trips endpoints ──────────────────────────────────────────
+export interface Trip {
+  id: string;
+  rider_id: string;
+  origin_label: string;
+  origin_lat: number;
+  origin_lng: number;
+  dest_label: string;
+  dest_lat: number;
+  dest_lng: number;
+  depart_at: string;
+  seats_total: number;
+  seats_available: number;
+  fare_set: number;
+  fare_cap: number;
+  status: 'open' | 'full' | 'in_progress' | 'completed' | 'cancelled';
+  vehicle_id: string | null;
+  vehicle_name?: string;
+  vehicle_type?: string;
+  is_recurring: boolean;
+  rrule: string | null;
+  community_id: string | null;
+  notes: string | null;
+  distance_m: number | null;
+  duration_s: number | null;
+  created_at: string;
+}
+
+export interface CreateTripPayload {
+  origin_label: string;
+  origin_lat: number;
+  origin_lng: number;
+  dest_label: string;
+  dest_lat: number;
+  dest_lng: number;
+  depart_at: string;
+  seats_total: number;
+  fare_set: number;
+  vehicle_id: string;
+  community_id?: string;
+  is_recurring?: boolean;
+  rrule?: string;
+  notes?: string;
+}
+
+export const tripsApi = {
+  create: (payload: CreateTripPayload) =>
+    request<Trip & { fare_estimate: { cap: number; low: number; high: number } }>(
+      '/trips',
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  mine: (page = 1) => request<Trip[]>(`/trips/mine?page=${page}`),
+  get: (id: string) => request<Trip>(`/trips/${id}`),
+  update: (id: string, data: Partial<Pick<Trip, 'fare_set' | 'seats_total' | 'notes' | 'depart_at'>>) =>
+    request<Trip>(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  cancel: (id: string) => request<{ message: string }>(`/trips/${id}`, { method: 'DELETE' }),
+};
+
 // ─── Health check ─────────────────────────────────────────────
 export const healthApi = {
   check: () =>

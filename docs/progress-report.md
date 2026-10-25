@@ -13,7 +13,7 @@
 | 2 | Database and Server Core | ✅ Complete | `phase-2` | User | 2026-10-17 |
 | 3 | Auth and Profiles | ✅ Complete | `phase-3` | User | 2026-10-18 |
 | 4 | Mobile App Shell and Design System | ✅ Complete | `501e024` | User | 2026-10-22 |
-| 5 | Maps, Geocoding, Routing and Trip Posting | ⏳ Not started | — | — | — |
+| 5 | Maps, Geocoding, Routing and Trip Posting | 🔧 In progress | — | — | — |
 | 6 | Fare Engine | ⏳ Not started | — | — | — |
 | 7 | Matching Engine | ⏳ Not started | — | — | — |
 | 8 | Booking Flow | ⏳ Not started | — | — | — |
@@ -300,3 +300,64 @@ cd client && npx expo start --dev-client  # After EAS dev build for MapLibre
 ---
 
 *RideColab Progress Report — auto-updated after each phase.*
+
+---
+
+### Phase 5 Report
+**Status**: 🔧 In progress — 2026-10-26
+
+**What was built:**
+
+**Server**
+- `src/services/geocoding.ts` — landmark DB-first lookup (0 ORS calls for 30 seeded Pune places), ORS geocode fallback, 24h cache in `geocoding_cache` table
+- `src/services/routing.ts` — ORS Directions with PostGIS LINESTRING storage in `route_cache`. Coordinates rounded to 4 decimal places for cache key stability (~11 m tolerance). Never called at search time.
+- `src/services/trips.ts` — Fare cap calculation from fuel prices + ARAI mileage + 0.8 real-world factor. Weekly limit check with on-demand reset (resilient to Render sleep). Recurring trip materialisation (Mon–Fri daily cron). Weekly counter reset (Monday cron).
+- `src/routes/geocoding.ts` — `GET /geocoding/landmarks` (public), `GET /geocoding/search` (JWT-guarded)
+- `src/routes/trips.ts` — Full CRUD: `POST`, `GET /mine`, `GET /:id`, `PATCH /:id`, `DELETE /:id`. **THE MONEY RULE** enforced on POST and PATCH: `fare_set > fare_cap` → 422 `FARE_CAP_EXCEEDED`. Weekly limit: → 403 `WEEKLY_LIMIT_EXCEEDED`.
+- `src/index.ts` — registered geocoding + trips routes, added two `node-cron` jobs
+
+**Client**
+- `components/PlaceSearch.tsx` — debounced (400ms) geocoding search with landmark quick-picks dropdown
+- `store/tripsStore.ts` — Zustand slice for origin/destination state + rider's trip list
+- `app/post-trip.tsx` — "Offer a ride" form: place search, departure, seats/fare, vehicle picker, recurring toggle, notes, fare cap disclaimer
+- `app/my-trips.tsx` — Rider's trip list with status badges, pull-to-refresh, cancel action
+- `app/(tabs)/index.tsx` — Wired to real geocoding API, quick-actions for rider mode
+
+**Test results:**
+```
+PASS tests/phase5.test.ts (34.864 s) — 19 tests
+  Geocoding:
+    ✓ returns all Pune landmarks without auth
+    ✓ requires auth for search
+    ✓ rejects query < 2 chars
+    ✓ Hinjewadi from landmarks (source: 'landmark', 0 ORS calls)
+    ✓ Kothrud from landmarks
+    ✓ Pune Railway Station from landmarks
+  Trips:
+    ✓ requires auth
+    ✓ creates trip and returns valid data
+    ✓ rejects fare_set above fare cap → 422 FARE_CAP_EXCEEDED
+    ✓ rejects invalid vehicle_id → 400
+    ✓ rejects missing required fields → 400
+    ✓ enforces weekly limit after 14 trips → 403 WEEKLY_LIMIT_EXCEEDED
+    ✓ GET /mine returns rider trips
+    ✓ GET /:id returns trip detail
+    ✓ GET /:id returns 404 for unknown
+    ✓ PATCH updates notes
+    ✓ PATCH rejects fare_set above cap → 422
+    ✓ DELETE cancels trip
+    ✓ DELETE returns 409 on already-cancelled trip
+```
+
+**Constraints respected:**
+- ORS Directions: 0 calls during test run (route seeded directly in `route_cache`)
+- ORS Geocoding: 0 calls for any of the 30 Pune landmarks
+- Fare cap enforced server-side on `POST /trips` and `PATCH /trips/:id` — client cannot bypass
+- Weekly limit 14 enforced; on-demand reset means missed Monday cron doesn't break it
+
+**Known limitations / next phase inputs:**
+- `post-trip.tsx` vehicle loader uses a manual fetch (not typed API call) — will clean up when vehicle API module is formalised
+- ORS key (`ORS_API_KEY=FILL_IN_PHASE_5`) needs a real key in `.env` for non-landmark geocoding and live route fetching
+- Passenger search/matching is stubbed to Phase 7
+
+---
