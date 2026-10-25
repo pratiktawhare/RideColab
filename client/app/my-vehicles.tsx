@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  Alert, RefreshControl, Modal, ScrollView, ActivityIndicator,
+  Alert, RefreshControl, Modal, ScrollView, ActivityIndicator, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -55,6 +55,7 @@ export default function MyVehiclesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [addModal, setAddModal] = useState(false);
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
+  const [plateNumber, setPlateNumber] = useState('');
   const [adding, setAdding] = useState(false);
   const [filterType, setFilterType] = useState('all');
 
@@ -91,15 +92,21 @@ export default function MyVehiclesScreen() {
       Alert.alert('Select a vehicle', 'Pick a vehicle from the list.');
       return;
     }
+    const plate = plateNumber.trim().toUpperCase();
+    if (!plate || plate.length < 4) {
+      Alert.alert('Enter plate number', 'e.g. MH12AB1234');
+      return;
+    }
     setAdding(true);
     try {
       const res = await authedFetch('/users/me/vehicles', {
         method: 'POST',
-        body: JSON.stringify({ catalog_id: selectedCatalogId }),
+        body: JSON.stringify({ catalog_id: selectedCatalogId, plate_number: plate }),
       });
       if (res.success) {
         setAddModal(false);
         setSelectedCatalogId('');
+        setPlateNumber('');
         fetchVehicles();
       } else {
         Alert.alert('Error', res.error?.message ?? 'Failed to add vehicle');
@@ -218,7 +225,7 @@ export default function MyVehiclesScreen() {
         <SafeAreaView style={[styles.modal, { backgroundColor: c.background }]} edges={['top']}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: c.text }]}>Add Vehicle</Text>
-            <TouchableOpacity onPress={() => { setAddModal(false); setSelectedCatalogId(''); }}>
+            <TouchableOpacity onPress={() => { setAddModal(false); setSelectedCatalogId(''); setPlateNumber(''); }}>
               <Text style={[styles.modalClose, { color: c.textSecondary }]}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -270,10 +277,23 @@ export default function MyVehiclesScreen() {
           />
 
           <View style={[styles.modalFooter, { backgroundColor: c.background, borderTopColor: c.border }]}>
+            {/* Plate number input */}
+            <View style={[styles.plateInput, { backgroundColor: c.inputBg, borderColor: c.border }]}>
+              <Text style={[styles.plateLabel, { color: c.textMuted }]}>🚘 Number plate</Text>
+              <TextInput
+                style={[styles.plateText, { color: c.text }]}
+                value={plateNumber}
+                onChangeText={(t) => setPlateNumber(t.toUpperCase())}
+                placeholder="e.g. MH12AB1234"
+                placeholderTextColor={c.textMuted}
+                autoCapitalize="characters"
+                maxLength={11}
+              />
+            </View>
             <TouchableOpacity
-              style={[styles.addConfirmBtn, { backgroundColor: selectedCatalogId ? c.accent : c.border }]}
+              style={[styles.addConfirmBtn, { backgroundColor: (selectedCatalogId && plateNumber.trim().length >= 4) ? c.accent : c.border }]}
               onPress={handleAdd}
-              disabled={adding || !selectedCatalogId}
+              disabled={adding || !selectedCatalogId || plateNumber.trim().length < 4}
             >
               {adding
                 ? <ActivityIndicator color="#fff" />
@@ -336,6 +356,12 @@ const styles = StyleSheet.create({
   },
   addConfirmBtn: {
     height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    marginTop: 10,
   },
   addConfirmText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  plateInput: {
+    borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 0,
+  },
+  plateLabel: { fontSize: 11, fontWeight: '600', marginBottom: 4 },
+  plateText: { fontSize: 16, fontWeight: '600', letterSpacing: 2 },
 });
