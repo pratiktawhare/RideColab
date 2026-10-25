@@ -24,11 +24,15 @@ interface VehicleCatalog {
 
 interface MyVehicle {
   id: string;
-  catalog_id: string;
-  nickname?: string;
-  make?: string;
-  model?: string;
-  fuel_type?: string;
+  catalog_id?: string;
+  plate_number: string;
+  make: string;
+  model: string;
+  variant?: string;
+  fuel_type: string;
+  type: string;
+  claimed_kmpl?: number;
+  seats?: number;
 }
 
 async function authedFetch(path: string, options: RequestInit = {}) {
@@ -66,15 +70,10 @@ export default function MyVehiclesScreen() {
         authedFetch('/users/me/vehicles'),
         catalogApi.vehicles(),
       ]);
-      const cat = catRes as VehicleCatalog[];
-      setCatalog(cat);
+      setCatalog(catRes as VehicleCatalog[]);
       if (myRes.success) {
-        // Enrich with catalog data
-        const enriched = (myRes.data as MyVehicle[]).map((v) => {
-          const c = cat.find((c) => c.id === v.catalog_id);
-          return { ...v, make: c?.make, model: c?.model, fuel_type: c?.fuel_type };
-        });
-        setVehicles(enriched);
+        // Server JOIN already includes make, model, fuel_type — use directly
+        setVehicles(myRes.data as MyVehicle[]);
       }
     } catch {
       // silent
@@ -118,10 +117,10 @@ export default function MyVehiclesScreen() {
     }
   };
 
-  const handleRemove = (id: string, label: string) => {
+  const handleRemove = (id: string, make: string, model: string) => {
     Alert.alert(
       'Remove vehicle?',
-      `Remove "${label}" from your vehicles?`,
+      `Remove "${make} ${model}" from your vehicles?`,
       [
         { text: 'Keep', style: 'cancel' },
         {
@@ -198,19 +197,20 @@ export default function MyVehiclesScreen() {
             <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
               <View style={styles.cardLeft}>
                 <Text style={styles.fuelIcon}>
-                  {fuelIcon[item.fuel_type ?? ''] ?? '🚗'}
+                  {fuelIcon[item.fuel_type] ?? '🚗'}
                 </Text>
                 <View>
                   <Text style={[styles.vehicleName, { color: c.text }]}>
-                    {item.make} {item.model}
+                    {item.make} {item.model}{item.variant ? ` ${item.variant}` : ''}
                   </Text>
                   <Text style={[styles.vehicleMeta, { color: c.textSecondary }]}>
-                    {item.fuel_type ? item.fuel_type.charAt(0).toUpperCase() + item.fuel_type.slice(1) : '—'}
+                    {item.plate_number}  ·  {item.fuel_type ? item.fuel_type.charAt(0).toUpperCase() + item.fuel_type.slice(1) : '—'}
+                    {item.claimed_kmpl ? `  ·  ${item.claimed_kmpl} km/l` : ''}
                   </Text>
                 </View>
               </View>
               <TouchableOpacity
-                onPress={() => handleRemove(item.id, `${item.make} ${item.model}`)}
+                onPress={() => handleRemove(item.id, item.make, item.model)}
                 style={[styles.removeBtn, { borderColor: c.danger }]}
               >
                 <Text style={[styles.removeText, { color: c.danger }]}>Remove</Text>
