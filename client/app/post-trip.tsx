@@ -6,6 +6,7 @@ import {
   View, Text, TextInput, ScrollView, StyleSheet,
   TouchableOpacity, Switch, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useThemeStore } from '@/store/themeStore';
@@ -13,7 +14,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useTripsStore } from '@/store/tripsStore';
 import { AppButton } from '@/components/AppButton';
 import { PlaceSearch } from '@/components/PlaceSearch';
-import { catalogApi, tripsApi, GeoResult } from '@/services/api';
+import { tripsApi, GeoResult } from '@/services/api';
 import type { CreateTripPayload } from '@/services/api';
 
 interface VehicleOption {
@@ -30,8 +31,12 @@ export default function PostTripScreen() {
 
   const [origin, setOrigin] = useState<GeoResult | null>(null);
   const [destination, setDestination] = useState<GeoResult | null>(null);
-  const [departDate, setDepartDate] = useState('');
-  const [departTime, setDepartTime] = useState('');
+  // Departure stored as a Date object — native pickers update it
+  const [departAt, setDepartAt] = useState<Date>(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + 30, 0, 0); // default: 30 min from now
+    return d;
+  });
   const [seats, setSeats] = useState('1');
   const [fareSet, setFareSet] = useState('');
   const [vehicleId, setVehicleId] = useState('');
@@ -44,22 +49,22 @@ export default function PostTripScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await catalogApi.vehicles();
-        // Actually fetch user's own vehicles
         const myVehicles = await fetch(
           `${require('@/constants/env').env.API_URL}/users/me/vehicles`,
           {
             headers: { Authorization: `Bearer ${require('@/store/authStore').useAuthStore.getState().accessToken}` },
           },
-        ).then((r) => r.json()) as { success: boolean; data: Array<{ id: string; catalog_id: string }> };
+        ).then((r) => r.json()) as {
+          success: boolean;
+          data: Array<{ id: string; make: string; model: string; plate_number: string }>;
+        };
 
         if (myVehicles.success && myVehicles.data.length > 0) {
-          // Get catalog details
-          const allCatalog = res as Array<{ id: string; make: string; model: string; type: string }>;
-          const opts = myVehicles.data.map((v) => {
-            const cat = allCatalog.find((c) => c.id === v.catalog_id);
-            return { id: v.id, label: cat ? `${cat.make} ${cat.model}` : 'Unknown vehicle' };
-          });
+          // Server JOIN already returns make & model
+          const opts = myVehicles.data.map((v) => ({
+            id: v.id,
+            label: `${v.make} ${v.model} · ${v.plate_number}`,
+          }));
           setVehicles(opts);
           if (opts[0]) setVehicleId(opts[0].id);
         }
@@ -69,13 +74,49 @@ export default function PostTripScreen() {
     })();
   }, []);
 
+  const openDatePicker = () => {
+    DateTimePickerAndroid.open({
+      value: departAt,
+      mode: 'date',
+      minimumDate: new Date(),
+      onChange: (_, date) => {
+        if (!date) return;
+        // Keep the existing time, just update the date
+        const next = new Date(departAt);
+        next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+        setDepartAt(next);
+        // After picking date, open time picker
+        DateTimePickerAndroid.open({
+          value: next,
+          mode: 'time',
+          is24Hour: false,
+          onChange: (_, t) => { if (t) setDepartAt(t); },
+        });
+      },
+    });
+  };
+
+  const openTimePicker = () => {
+    DateTimePickerAndroid.open({
+      value: departAt,
+      mode: 'time',
+      is24Hour: false,
+      onChange: (_, t) => { if (t) setDepartAt(t); },
+    });
+  };
+
+  const formatDate = (d: Date) =>
+    d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const formatTime = (d: Date) =>
+    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
   const handlePost = async () => {
     if (!origin || !destination) {
       Alert.alert('Missing location', 'Please select both pickup and destination.');
       return;
     }
-    if (!departDate || !departTime) {
-      Alert.alert('Missing time', 'Please enter departure date and time.');
+    if (departAt <= new Date()) {
+      Alert.alert('Invalid time', 'Departure must be in the future.');
       return;
     }
     if (!vehicleId) {
@@ -88,14 +129,6 @@ export default function PostTripScreen() {
       return;
     }
 
-    let departAt: string;
-    try {
-      departAt = new Date(`${departDate}T${departTime}:00`).toISOString();
-    } catch {
-      Alert.alert('Invalid date/time', 'Use YYYY-MM-DD and HH:MM format.');
-      return;
-    }
-
     setLoading(true);
     try {
       const payload: CreateTripPayload = {
@@ -105,7 +138,7 @@ export default function PostTripScreen() {
         dest_label: destination.label,
         dest_lat: destination.lat,
         dest_lng: destination.lng,
-        depart_at: departAt,
+        depart_at: departAt.toISOString(),
         seats_total: parseInt(seats, 10) || 1,
         fare_set: fareNum,
         vehicle_id: vehicleId,
@@ -172,28 +205,22 @@ export default function PostTripScreen() {
           <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
             <Text style={[styles.sectionLabel, { color: c.text }]}>Departure</Text>
             <View style={styles.row}>
-              <View style={[styles.inputBox, { backgroundColor: c.inputBg, borderColor: c.border, flex: 1 }]}>
-                <Text style={[styles.inputLabel, { color: c.textMuted }]}>Date</Text>
-                <TextInput
-                  style={[styles.textInput, { color: c.text }]}
-                  value={departDate}
-                  onChangeText={setDepartDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={c.textMuted}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={[styles.inputBox, { backgroundColor: c.inputBg, borderColor: c.border, flex: 1 }]}>
-                <Text style={[styles.inputLabel, { color: c.textMuted }]}>Time</Text>
-                <TextInput
-                  style={[styles.textInput, { color: c.text }]}
-                  value={departTime}
-                  onChangeText={setDepartTime}
-                  placeholder="HH:MM"
-                  placeholderTextColor={c.textMuted}
-                  keyboardType="numeric"
-                />
-              </View>
+              {/* Date picker */}
+              <TouchableOpacity
+                style={[styles.pickerBtn, { backgroundColor: c.inputBg, borderColor: c.border, flex: 1 }]}
+                onPress={openDatePicker}
+              >
+                <Text style={[styles.inputLabel, { color: c.textMuted }]}>📅 Date</Text>
+                <Text style={[styles.pickerValue, { color: c.text }]}>{formatDate(departAt)}</Text>
+              </TouchableOpacity>
+              {/* Time picker */}
+              <TouchableOpacity
+                style={[styles.pickerBtn, { backgroundColor: c.inputBg, borderColor: c.border, flex: 1 }]}
+                onPress={openTimePicker}
+              >
+                <Text style={[styles.inputLabel, { color: c.textMuted }]}>🕐 Time</Text>
+                <Text style={[styles.pickerValue, { color: c.text }]}>{formatTime(departAt)}</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -326,6 +353,8 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 14, fontWeight: '700' },
   routeConnector: { width: 2, height: 8, marginLeft: 18, borderRadius: 1 },
   row: { flexDirection: 'row', gap: 10 },
+  pickerBtn: { borderRadius: 10, borderWidth: 1, padding: 12, gap: 4 },
+  pickerValue: { fontSize: 15, fontWeight: '600' },
   inputBox: { borderRadius: 10, borderWidth: 1, padding: 10, gap: 4 },
   inputLabel: { fontSize: 11, fontWeight: '600' },
   textInput: { fontSize: 15, fontWeight: '500' },
