@@ -3,10 +3,9 @@
 // ─────────────────────────────────────────────────────────────
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, ScrollView, StyleSheet,
+  View, Text, TextInput, ScrollView, StyleSheet, Modal,
   TouchableOpacity, Switch, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useThemeStore } from '@/store/themeStore';
@@ -31,12 +30,14 @@ export default function PostTripScreen() {
 
   const [origin, setOrigin] = useState<GeoResult | null>(null);
   const [destination, setDestination] = useState<GeoResult | null>(null);
-  // Departure stored as a Date object — native pickers update it
   const [departAt, setDepartAt] = useState<Date>(() => {
     const d = new Date();
-    d.setMinutes(d.getMinutes() + 30, 0, 0); // default: 30 min from now
+    d.setMinutes(d.getMinutes() + 30, 0, 0);
     return d;
   });
+  const [showPicker, setShowPicker] = useState<'date' | 'time' | null>(null);
+  // Temp values while picker is open
+  const [tmpDate, setTmpDate] = useState(new Date());
   const [seats, setSeats] = useState('1');
   const [fareSet, setFareSet] = useState('');
   const [vehicleId, setVehicleId] = useState('');
@@ -74,36 +75,19 @@ export default function PostTripScreen() {
     })();
   }, []);
 
-  const openDatePicker = () => {
-    DateTimePickerAndroid.open({
-      value: departAt,
-      mode: 'date',
-      minimumDate: new Date(),
-      onChange: (_, date) => {
-        if (!date) return;
-        // Keep the existing time, just update the date
-        const next = new Date(departAt);
-        next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
-        setDepartAt(next);
-        // After picking date, open time picker
-        DateTimePickerAndroid.open({
-          value: next,
-          mode: 'time',
-          is24Hour: false,
-          onChange: (_, t) => { if (t) setDepartAt(t); },
-        });
-      },
-    });
-  };
+  const openDatePicker = () => { setTmpDate(new Date(departAt)); setShowPicker('date'); };
+  const openTimePicker = () => { setTmpDate(new Date(departAt)); setShowPicker('time'); };
 
-  const openTimePicker = () => {
-    DateTimePickerAndroid.open({
-      value: departAt,
-      mode: 'time',
-      is24Hour: false,
-      onChange: (_, t) => { if (t) setDepartAt(t); },
-    });
+  const adjustDate = (days: number) => {
+    setTmpDate((d) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; });
   };
+  const adjustHour = (h: number) => {
+    setTmpDate((d) => { const n = new Date(d); n.setHours((n.getHours() + h + 24) % 24); return n; });
+  };
+  const adjustMinute = (m: number) => {
+    setTmpDate((d) => { const n = new Date(d); n.setMinutes((n.getMinutes() + m + 60) % 60); return n; });
+  };
+  const confirmPicker = () => { setDepartAt(new Date(tmpDate)); setShowPicker(null); };
 
   const formatDate = (d: Date) =>
     d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -336,6 +320,83 @@ export default function PostTripScreen() {
           />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Pure-JS Date / Time Picker Modal */}
+      <Modal visible={!!showPicker} transparent animationType="slide">
+        <View style={styles.pickerOverlay}>
+          <View style={[styles.pickerSheet, { backgroundColor: c.surface }]}>
+            <Text style={[styles.pickerTitle, { color: c.text }]}>
+              {showPicker === 'date' ? '📅 Pick date' : '🕐 Pick time'}
+            </Text>
+
+            {showPicker === 'date' && (
+              <View style={styles.pickerRow}>
+                <TouchableOpacity style={[styles.adjBtn, { borderColor: c.border }]} onPress={() => adjustDate(-1)}>
+                  <Text style={[styles.adjText, { color: c.text }]}>‹ Prev</Text>
+                </TouchableOpacity>
+                <View style={{ alignItems: 'center', flex: 1 }}>
+                  <Text style={[styles.pickerBig, { color: c.text }]}>
+                    {tmpDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long' })}
+                  </Text>
+                  <Text style={[{ color: c.textSecondary, fontSize: 12 }]}>
+                    {tmpDate.getFullYear()}
+                  </Text>
+                </View>
+                <TouchableOpacity style={[styles.adjBtn, { borderColor: c.border }]} onPress={() => adjustDate(1)}>
+                  <Text style={[styles.adjText, { color: c.text }]}>Next ›</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {showPicker === 'time' && (
+              <View style={styles.pickerRow}>
+                {/* Hour */}
+                <View style={styles.timeUnit}>
+                  <TouchableOpacity style={[styles.adjCircle, { borderColor: c.accent }]} onPress={() => adjustHour(1)}>
+                    <Text style={[styles.adjCircleText, { color: c.accent }]}>＋</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.pickerBig, { color: c.text }]}>
+                    {String(tmpDate.getHours()).padStart(2, '0')}
+                  </Text>
+                  <TouchableOpacity style={[styles.adjCircle, { borderColor: c.accent }]} onPress={() => adjustHour(-1)}>
+                    <Text style={[styles.adjCircleText, { color: c.accent }]}>－</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.timeLabel, { color: c.textMuted }]}>Hour</Text>
+                </View>
+                <Text style={[styles.pickerBig, { color: c.text, alignSelf: 'center', marginBottom: 24 }]}>:</Text>
+                {/* Minute */}
+                <View style={styles.timeUnit}>
+                  <TouchableOpacity style={[styles.adjCircle, { borderColor: c.accent }]} onPress={() => adjustMinute(5)}>
+                    <Text style={[styles.adjCircleText, { color: c.accent }]}>＋</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.pickerBig, { color: c.text }]}>
+                    {String(tmpDate.getMinutes()).padStart(2, '0')}
+                  </Text>
+                  <TouchableOpacity style={[styles.adjCircle, { borderColor: c.accent }]} onPress={() => adjustMinute(-5)}>
+                    <Text style={[styles.adjCircleText, { color: c.accent }]}>－</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.timeLabel, { color: c.textMuted }]}>Min (±5)</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.pickerRow}>
+              <TouchableOpacity
+                style={[styles.pickerAction, { borderColor: c.border, borderWidth: 1 }]}
+                onPress={() => setShowPicker(null)}
+              >
+                <Text style={[{ color: c.text, fontWeight: '600' }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pickerAction, { backgroundColor: c.accent }]}
+                onPress={confirmPicker}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Done ✓</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -368,4 +429,31 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   toggleLabel: { fontSize: 14, fontWeight: '600' },
   notesInput: { borderRadius: 10, borderWidth: 1, padding: 12, fontSize: 14, minHeight: 80, textAlignVertical: 'top' },
+  // Picker modal
+  pickerOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, gap: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15, shadowRadius: 12, elevation: 16,
+  },
+  pickerTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  pickerBig: { fontSize: 32, fontWeight: '700' },
+  adjBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  adjText: { fontSize: 14, fontWeight: '600' },
+  timeUnit: { alignItems: 'center', gap: 8, flex: 1 },
+  adjCircle: {
+    width: 44, height: 44, borderRadius: 22, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  adjCircleText: { fontSize: 22, fontWeight: '700', lineHeight: 28 },
+  timeLabel: { fontSize: 11, fontWeight: '600' },
+  pickerAction: {
+    flex: 1, height: 48, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
