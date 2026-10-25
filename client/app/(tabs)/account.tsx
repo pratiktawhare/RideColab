@@ -2,12 +2,14 @@
 import React from 'react';
 import { View, Text, Switch, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useThemeStore } from '@/store/themeStore';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/services/api';
 import Constants from 'expo-constants';
 
 export default function AccountScreen() {
+  const router = useRouter();
   const { theme, scheme, toggle } = useThemeStore();
   const { user, logout } = useAuthStore();
   const c = theme.colors;
@@ -62,6 +64,12 @@ export default function AccountScreen() {
             label="🌐 Language"
             right={<Text style={[styles.rowValue, { color: c.textSecondary }]}>English</Text>}
           />
+          <TouchableOpacity onPress={() => router.push('/my-vehicles' as any)}>
+            <Row
+              label="🚗 My Vehicles"
+              right={<Text style={[styles.rowValue, { color: c.accent }]}>Manage →</Text>}
+            />
+          </TouchableOpacity>
           <Row
             label="🆘 Emergency contacts"
             right={<Text style={[styles.rowValue, { color: c.accent }]}>Manage →</Text>}

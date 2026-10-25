@@ -259,7 +259,7 @@ export default function PostTripScreen() {
             <TouchableOpacity
               style={[styles.card, { backgroundColor: c.surface, borderColor: c.warning }]}
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onPress={() => router.push('/my-trips' as any)}
+              onPress={() => router.push('/my-vehicles' as any)}
             >
               <Text style={[styles.noVehicleText, { color: c.warning }]}>
                 ⚠️ No vehicles found. Add one in Account → My Vehicles.

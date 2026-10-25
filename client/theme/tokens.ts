@@ -150,8 +150,8 @@ export const darkTheme = {
   colors: {
     background: '#0A0F1E',
     surface: '#111827',
-    primary: palette.white,
-    primaryPressed: palette.grey200,
+    primary: '#1A6B62',       // teal-dark — visible button bg with white text
+    primaryPressed: '#0E9384',
     accent: palette.teal,
     accentMuted: '#0E9384' + '33',
     text: palette.white,
