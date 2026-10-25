@@ -15,17 +15,34 @@ async function refreshTokens(): Promise<string | null> {
   const { refreshToken, setTokens, logout } = useAuthStore.getState();
   if (!refreshToken) { logout(); return null; }
 
-  const res = await fetch(`${env.API_URL}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
+  try {
+    const res = await fetch(`${env.API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
 
-  if (!res.ok) { logout(); return null; }
-  const json = await res.json() as { data: { access_token: string; refresh_token: string } };
-  setTokens(json.data.access_token, json.data.refresh_token);
-  return json.data.access_token;
+    // Only logout on explicit auth rejection (token invalid/expired).
+    // On 5xx or network errors, preserve the session and let the
+    // original request fail — don't punish the user for a server blip.
+    if (res.status === 401 || res.status === 403) {
+      logout();
+      return null;
+    }
+    if (!res.ok) {
+      // Server error or network issue — don't logout, just fail this refresh
+      return null;
+    }
+
+    const json = await res.json() as { data: { access_token: string; refresh_token: string } };
+    setTokens(json.data.access_token, json.data.refresh_token);
+    return json.data.access_token;
+  } catch {
+    // Network error — server unreachable, don't logout
+    return null;
+  }
 }
+
 
 let refreshing: Promise<string | null> | null = null;
 
