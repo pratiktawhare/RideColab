@@ -63,6 +63,11 @@ export default function MyVehiclesScreen() {
   const [adding, setAdding] = useState(false);
   const [filterType, setFilterType] = useState('all');
 
+  // Edit state
+  const [editVehicle, setEditVehicle] = useState<MyVehicle | null>(null);
+  const [editPlate, setEditPlate] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const fetchVehicles = useCallback(async () => {
     setLoading(true);
     try {
@@ -139,6 +144,39 @@ export default function MyVehiclesScreen() {
     );
   };
 
+  const openEdit = (vehicle: MyVehicle) => {
+    setEditVehicle(vehicle);
+    setEditPlate(vehicle.plate_number);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editVehicle) return;
+    const plate = editPlate.trim().toUpperCase();
+    if (plate.length < 4) {
+      Alert.alert('Invalid plate', 'Plate number must be at least 4 characters.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await authedFetch(`/users/me/vehicles/${editVehicle.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ plate_number: plate }),
+      });
+      if (res.success) {
+        setVehicles((v) =>
+          v.map((x) => x.id === editVehicle.id ? { ...x, plate_number: plate } : x),
+        );
+        setEditVehicle(null);
+      } else {
+        Alert.alert('Error', res.error?.message ?? 'Failed to update');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const fuelIcon: Record<string, string> = {
     petrol: '⛽',
     diesel: '🛢️',
@@ -209,12 +247,20 @@ export default function MyVehiclesScreen() {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity
-                onPress={() => handleRemove(item.id, item.make, item.model)}
-                style={[styles.removeBtn, { borderColor: c.danger }]}
-              >
-                <Text style={[styles.removeText, { color: c.danger }]}>Remove</Text>
-              </TouchableOpacity>
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  onPress={() => openEdit(item)}
+                  style={[styles.actionBtn, { borderColor: c.accent }]}
+                >
+                  <Text style={[styles.actionBtnText, { color: c.accent }]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleRemove(item.id, item.make, item.model)}
+                  style={[styles.actionBtn, { borderColor: c.danger }]}
+                >
+                  <Text style={[styles.actionBtnText, { color: c.danger }]}>Remove</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         />
@@ -303,6 +349,53 @@ export default function MyVehiclesScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Edit Vehicle Modal */}
+      <Modal visible={!!editVehicle} animationType="fade" transparent>
+        <View style={styles.editOverlay}>
+          <View style={[styles.editSheet, { backgroundColor: c.surface }]}>
+            <Text style={[styles.editTitle, { color: c.text }]}>
+              Edit {editVehicle?.make} {editVehicle?.model}
+            </Text>
+            <Text style={[styles.editSub, { color: c.textSecondary }]}>
+              Only the number plate can be updated.
+            </Text>
+
+            <View style={[styles.plateInput, { backgroundColor: c.inputBg, borderColor: c.border }]}>
+              <Text style={[styles.plateLabel, { color: c.textMuted }]}>🚘 Number plate</Text>
+              <TextInput
+                style={[styles.plateText, { color: c.text }]}
+                value={editPlate}
+                onChangeText={(t) => setEditPlate(t.toUpperCase())}
+                placeholder="e.g. MH12AB1234"
+                placeholderTextColor={c.textMuted}
+                autoCapitalize="characters"
+                maxLength={11}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.editBtns}>
+              <TouchableOpacity
+                style={[styles.editCancelBtn, { borderColor: c.border }]}
+                onPress={() => setEditVehicle(null)}
+              >
+                <Text style={[{ color: c.text, fontWeight: '600', fontSize: 15 }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.editSaveBtn, { backgroundColor: editPlate.trim().length >= 4 ? c.accent : c.border }]}
+                onPress={handleSaveEdit}
+                disabled={saving || editPlate.trim().length < 4}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Save</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -320,19 +413,20 @@ const styles = StyleSheet.create({
     borderRadius: 16, padding: 16, borderWidth: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  cardActions: { flexDirection: 'row', gap: 8 },
+  actionBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  actionBtnText: { fontSize: 12, fontWeight: '600' },
   fuelIcon: { fontSize: 28 },
   vehicleName: { fontSize: 15, fontWeight: '600' },
   vehicleMeta: { fontSize: 12, marginTop: 2 },
-  removeBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  removeText: { fontSize: 13, fontWeight: '600' },
   empty: { alignItems: 'center', gap: 10, paddingTop: 60 },
   emptyIcon: { fontSize: 52 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySubtitle: { fontSize: 14, textAlign: 'center' },
   emptyBtn: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   emptyBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  // Modal
+  // Add modal
   modal: { flex: 1 },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -359,9 +453,28 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   addConfirmText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  plateInput: {
-    borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 0,
-  },
+  plateInput: { borderRadius: 12, borderWidth: 1, padding: 12 },
   plateLabel: { fontSize: 11, fontWeight: '600', marginBottom: 4 },
   plateText: { fontSize: 16, fontWeight: '600', letterSpacing: 2 },
+  // Edit modal
+  editOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  editSheet: {
+    borderRadius: 20, padding: 24, width: '100%', gap: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25, shadowRadius: 16, elevation: 12,
+  },
+  editTitle: { fontSize: 17, fontWeight: '700' },
+  editSub: { fontSize: 13, marginTop: -8 },
+  editBtns: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  editCancelBtn: {
+    flex: 1, height: 48, borderRadius: 12, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  editSaveBtn: {
+    flex: 1, height: 48, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });

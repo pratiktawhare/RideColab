@@ -123,6 +123,29 @@ myVehiclesRouter.post('/', async (req: Request, res: Response, next: NextFunctio
   }
 });
 
+myVehiclesRouter.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { plate_number } = req.body as { plate_number?: string };
+    if (!plate_number || plate_number.trim().length < 4) {
+      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'plate_number is required (min 4 chars)' } });
+      return;
+    }
+    const { rows, rowCount } = await query(
+      `UPDATE vehicles SET plate_number = $1
+       WHERE id = $2 AND user_id = $3 AND is_active = true
+       RETURNING id, plate_number`,
+      [plate_number.trim().toUpperCase(), req.params.id, req.user!.sub],
+    );
+    if (!rowCount) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Vehicle not found' } });
+      return;
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 myVehiclesRouter.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rowCount } = await query(
