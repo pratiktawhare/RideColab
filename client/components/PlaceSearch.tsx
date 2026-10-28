@@ -70,6 +70,28 @@ export function PlaceSearch({ label, value, onSelect, dotColor = '🟢' }: Props
     onSelect(result);
   };
 
+  // Quick pick: tap triggers a real geocoding search to get coordinates
+  const handleQuickPick = async (place: string) => {
+    setQuery(place);
+    setFocused(false);
+    setResults([]);
+    setLoading(true);
+    try {
+      const res = await geocodingApi.search(place);
+      const match = res[0];
+      if (match) {
+        onSelect(match);
+      } else {
+        // Fallback: pass label only, server will warn on 0,0
+        onSelect({ label: place, lat: 0, lng: 0, source: 'landmark' });
+      }
+    } catch {
+      onSelect({ label: place, lat: 0, lng: 0, source: 'landmark' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const showDropdown = focused && (results.length > 0 || loading);
   const showQuickPicks = focused && query.trim().length === 0;
 
@@ -106,7 +128,7 @@ export function PlaceSearch({ label, value, onSelect, dotColor = '🟢' }: Props
             <TouchableOpacity
               key={place}
               style={[styles.resultRow, { borderBottomColor: c.border }]}
-              onPress={() => handleSelect({ label: place, lat: 0, lng: 0, source: 'landmark' })}
+              onPress={() => void handleQuickPick(place)}
             >
               <Text style={styles.resultIcon}>📍</Text>
               <Text style={[styles.resultLabel, { color: c.text }]}>{place}</Text>
