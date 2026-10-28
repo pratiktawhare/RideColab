@@ -14,7 +14,7 @@
 | 3 | Auth and Profiles | ✅ Complete | `phase-3` | User | 2026-10-18 |
 | 4 | Mobile App Shell and Design System | ✅ Complete | `501e024` | User | 2026-10-22 |
 | 5 | Maps, Geocoding, Routing and Trip Posting | ✅ Complete | `0ef6bdf` | User | 2026-10-26 |
-| 6 | Fare Engine | ⏳ Not started | — | — | — |
+| 6 | Fare Engine | ✅ Complete | `abdb074` | User | 2026-10-28 |
 | 7 | Matching Engine | ⏳ Not started | — | — | — |
 | 8 | Booking Flow | ⏳ Not started | — | — | — |
 | 9 | Live Ride and Safety | ⏳ Not started | — | — | — |
@@ -294,7 +294,47 @@ All suites: 57 passed, 57 total
 ---
 
 ### Phase 6 Report
-**Status**: ⏳ Not started
+**Status**: ✅ Complete — committed `abdb074` — 2026-10-28
+
+#### What was built
+- **`server/src/services/fare.ts`** — Fare calculation service with:
+  - `calculateFareFromParams()` — pure function (no DB), testable in isolation
+  - `estimateByVehicle(vehicleId, distanceM, seats)` — DB lookup + calc
+  - `estimateByCatalog(catalogId, distanceM, seats)` — for catalog-level previews
+  - `getFuelPrices()` / `updateFuelPrice()` — admin CRUD
+  - `calculateFareCap()` — backwards compat re-export used by trips.ts
+- **`server/src/routes/fare.ts`** — Two routers mounted:
+  - `GET /api/v1/fare/estimate?vehicle_id=&distance_m=&seats=` — live fare preview
+  - `GET /api/v1/admin/fuel-prices` — list all prices (admin JWT)
+  - `PATCH /api/v1/admin/fuel-prices/:id` — update a price (admin JWT)
+- **`server/tests/phase6.test.ts`** — 24 unit tests, all passing
+- **`client/services/api.ts`** — `fareApi.estimate()` added with `FareEstimate` interface
+- **`client/app/post-trip.tsx`** — Live fare estimate card: shows Min/pax · Max/pax · Cap (trip), fuel breakdown; prefills fare_set to cap; re-fetches on vehicle or seat change
+
+#### Formula verified (plan acceptance)
+- 10 km petrol, 15 kmpl, ₹106, RWF=0.8 → cap = ₹88.33 ✅
+- `fare_set = cap` → accepted; `fare_set = cap + 1` → rejected (server-side 422 in trips.ts) ✅
+- Diesel/CNG/EV/RWF variants all covered in tests ✅
+
+#### Files changed
+- `server/src/services/fare.ts` (new)
+- `server/src/routes/fare.ts` (new)
+- `server/tests/phase6.test.ts` (new — 24 tests)
+- `server/src/services/trips.ts` (refactored: imports fare from service)
+- `server/src/index.ts` (mounted /fare and /admin/fuel-prices)
+- `client/services/api.ts` (fareApi + FareEstimate)
+- `client/app/post-trip.tsx` (live estimate card, fare state, estimate useEffect)
+
+#### Test results
+```
+TESTS: 24 passed / 24 total
+Time:  4.7s
+tsc --noEmit: 0 errors (client + server)
+```
+
+#### Known issues / assumptions
+- Estimate preview uses 15 km placeholder distance (actual distance comes from ORS on trip create)
+- Admin fuel-price endpoints use JWT role check (no separate admin middleware yet)
 
 ---
 
