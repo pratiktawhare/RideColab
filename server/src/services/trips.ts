@@ -3,93 +3,12 @@
 // ─────────────────────────────────────────────────────────────
 import { query, withTransaction } from '~/db/pool';
 import { logger } from '~/utils/logger';
+import { calculateFareCap, getConfig } from '~/services/fare';
 
-export interface FareCap {
-  cap: number;       // Maximum fare_set allowed (₹)
-  low: number;       // Minimum realistic share (₹)
-  high: number;      // Maximum realistic share = cap (₹)
-  distance_m: number;
-}
+export type { FareCap } from '~/services/fare';
+export { calculateFareCap };
 
-// ── Get a config value from app_config ────────────────────────
-async function getConfig(key: string, defaultVal: string): Promise<string> {
-  const res = await query<{ value: string }>(
-    `SELECT value FROM app_config WHERE key = $1`,
-    [key],
-  );
-  return res.rows[0]?.value ?? defaultVal;
-}
-
-// ── Calculate fare cap for a given vehicle + route ────────────
-export async function calculateFareCap(
-  vehicleId: string,
-  distanceM: number,
-  seats: number,
-): Promise<FareCap> {
-  const distanceKm = distanceM / 1000;
-
-  // Fetch vehicle catalog details
-  const vehicleRes = await query<{
-    fuel_type: string;
-    claimed_kmpl: number | null;
-    kwh_per_100km: number | null;
-  }>(
-    `SELECT vc.fuel_type, vc.claimed_kmpl, vc.kwh_per_100km
-     FROM vehicles v
-     JOIN vehicle_catalog vc ON vc.id = v.catalog_id
-     WHERE v.id = $1 AND v.is_active = true`,
-    [vehicleId],
-  );
-
-  const vehicleRow = vehicleRes.rows[0];
-  if (!vehicleRow) {
-    throw new Error('VEHICLE_NOT_FOUND');
-  }
-
-  const { fuel_type, claimed_kmpl, kwh_per_100km } = vehicleRow;
-
-  // Fetch current fuel price
-  const fuelRes = await query<{ price_per_unit: number }>(
-    `SELECT price_per_unit FROM fuel_prices WHERE fuel_type = $1`,
-    [fuel_type],
-  );
-
-  const fuelRow = fuelRes.rows[0];
-  if (!fuelRow) {
-    throw new Error('FUEL_PRICE_NOT_FOUND');
-  }
-
-  const price = Number(fuelRow.price_per_unit);
-  const rwf = parseFloat(await getConfig('fare.real_world_factor', '0.8'));
-
-  let costPerKmLow: number;
-  let costPerKmHigh: number;
-
-  if (fuel_type === 'electric' && kwh_per_100km) {
-    // EVs: cost = (kWh/100km / 100) × price_per_kWh
-    const costPerKm = (Number(kwh_per_100km) / 100) * price;
-    costPerKmLow = costPerKm;
-    costPerKmHigh = costPerKm; // EVs: no RWF variance, they're already real-world
-  } else if (claimed_kmpl) {
-    // ICE vehicles
-    costPerKmLow = price / Number(claimed_kmpl);
-    costPerKmHigh = price / (Number(claimed_kmpl) * rwf); // Higher cost = real world
-  } else {
-    throw new Error('VEHICLE_MILEAGE_MISSING');
-  }
-
-  const totalCostLow = costPerKmLow * distanceKm;
-  const totalCostHigh = costPerKmHigh * distanceKm;
-
-  // Fare cap = total trip cost at real-world mileage
-  // fare_set represents total trip cost; passengers pay fare_set / (seats + 1)
-  // We cap fare_set at totalCostHigh so rider doesn't profit
-  const cap = Math.round(totalCostHigh * 100) / 100;
-  const low = Math.round((totalCostLow / (seats + 1)) * 100) / 100;
-  const high = Math.round((totalCostHigh / (seats + 1)) * 100) / 100;
-
-  return { cap, low, high, distance_m: distanceM };
-}
+// calculateFareCap and getConfig are imported from ~/services/fare
 
 // ── Check weekly trip limit ────────────────────────────────────
 export async function checkWeeklyLimit(riderId: string): Promise<void> {

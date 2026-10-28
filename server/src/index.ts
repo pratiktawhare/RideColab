@@ -17,6 +17,7 @@ import usersRouter from '~/routes/users';
 import catalogRouter, { myVehiclesRouter } from '~/routes/catalog';
 import geocodingRouter from '~/routes/geocoding';
 import tripsRouter from '~/routes/trips';
+import { fareRouter, adminFuelRouter } from '~/routes/fare';
 import { resetWeeklyCounters, materialiseRecurringTrips } from '~/services/trips';
 
 const app = express();
@@ -95,6 +96,8 @@ app.use('/api/v1/users/me/vehicles', myVehiclesRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/geocoding', geocodingRouter);
 app.use('/api/v1/trips', tripsRouter);
+app.use('/api/v1/fare', fareRouter);
+app.use('/api/v1/admin/fuel-prices', adminFuelRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────
 app.use((_req, res) => {

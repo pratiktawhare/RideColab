@@ -121,6 +121,34 @@ export const catalogApi = {
   },
 };
 
+// ─── Fare endpoints ───────────────────────────────────────────
+export interface FareEstimate {
+  low: number;
+  high: number;
+  cap: number;
+  breakdown: {
+    fuel_type: string;
+    fuel_price: number;
+    claimed_kmpl: number | null;
+    kwh_per_100km: number | null;
+    real_world_factor: number;
+    distance_km: number;
+    cost_per_km_low: number;
+    cost_per_km_high: number;
+  };
+}
+
+export const fareApi = {
+  estimate: (vehicleId: string, distanceM: number, seats: number) => {
+    const q = new URLSearchParams({
+      vehicle_id: vehicleId,
+      distance_m: String(distanceM),
+      seats: String(seats),
+    }).toString();
+    return request<FareEstimate>(`/fare/estimate?${q}`);
+  },
+};
+
 // ─── Geocoding endpoints ──────────────────────────────────────
 export interface GeoResult {
   label: string;

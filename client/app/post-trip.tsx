@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useTripsStore } from '@/store/tripsStore';
 import { AppButton } from '@/components/AppButton';
 import { PlaceSearch } from '@/components/PlaceSearch';
-import { tripsApi, GeoResult } from '@/services/api';
+import { tripsApi, fareApi, GeoResult, FareEstimate } from '@/services/api';
 import type { CreateTripPayload } from '@/services/api';
 
 interface VehicleOption {
@@ -40,6 +40,8 @@ export default function PostTripScreen() {
   const [tmpDate, setTmpDate] = useState(new Date());
   const [seats, setSeats] = useState('1');
   const [fareSet, setFareSet] = useState('');
+  const [fareEstimate, setFareEstimate] = useState<FareEstimate | null>(null);
+  const [fareLoading, setFareLoading] = useState(false);
   const [vehicleId, setVehicleId] = useState('');
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [isRecurring, setIsRecurring] = useState(false);
@@ -75,6 +77,34 @@ export default function PostTripScreen() {
     })();
   }, []);
 
+  // Live fare estimate — refetch whenever vehicle, seats, or route changes
+  useEffect(() => {
+    // Need: vehicleId + route distance (we use ~15km placeholder if no distance yet)
+    // The actual distance comes from the server when the trip is created.
+    // For the preview we use a best-guess straight-line dist until ORS runs.
+    if (!vehicleId) { setFareEstimate(null); return; }
+    const seatsNum = Math.max(1, parseInt(seats, 10) || 1);
+    let cancelled = false;
+    const fetchEstimate = async () => {
+      setFareLoading(true);
+      try {
+        // Use 15 km placeholder if no route yet; server will re-calculate exact on create
+        const est = await fareApi.estimate(vehicleId, 15_000, seatsNum);
+        if (!cancelled) {
+          setFareEstimate(est);
+          // Pre-fill fare_set to cap so rider sees the max they can charge
+          setFareSet(String(est.cap));
+        }
+      } catch {
+        // silent — estimate is a preview only
+      } finally {
+        if (!cancelled) setFareLoading(false);
+      }
+    };
+    void fetchEstimate();
+    return () => { cancelled = true; };
+  }, [vehicleId, seats]);
+
   const openDatePicker = () => { setTmpDate(new Date(departAt)); setShowPicker('date'); };
   const openTimePicker = () => { setTmpDate(new Date(departAt)); setShowPicker('time'); };
 
@@ -107,9 +137,10 @@ export default function PostTripScreen() {
       Alert.alert('No vehicle', 'Please add a vehicle first in Account → My Vehicles.');
       return;
     }
+    // fare_set: user can set any value ≤ cap; cap is enforced server-side too
     const fareNum = parseFloat(fareSet);
     if (isNaN(fareNum) || fareNum <= 0) {
-      Alert.alert('Invalid fare', 'Please enter a valid trip cost.');
+      Alert.alert('Invalid fare', 'Please enter a valid total trip cost.');
       return;
     }
 
@@ -211,33 +242,66 @@ export default function PostTripScreen() {
           {/* Seats & Fare */}
           <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
             <Text style={[styles.sectionLabel, { color: c.text }]}>Seats & Fare</Text>
-            <View style={styles.row}>
-              <View style={[styles.inputBox, { backgroundColor: c.inputBg, borderColor: c.border, flex: 1 }]}>
-                <Text style={[styles.inputLabel, { color: c.textMuted }]}>Seats available</Text>
-                <TextInput
-                  style={[styles.textInput, { color: c.text }]}
-                  value={seats}
-                  onChangeText={setSeats}
-                  keyboardType="numeric"
-                  placeholder="1–6"
-                  placeholderTextColor={c.textMuted}
-                />
-              </View>
-              <View style={[styles.inputBox, { backgroundColor: c.inputBg, borderColor: c.border, flex: 1 }]}>
-                <Text style={[styles.inputLabel, { color: c.textMuted }]}>Total trip cost (₹)</Text>
-                <TextInput
-                  style={[styles.textInput, { color: c.text }]}
-                  value={fareSet}
-                  onChangeText={setFareSet}
-                  keyboardType="decimal-pad"
-                  placeholder="e.g. 80"
-                  placeholderTextColor={c.textMuted}
-                />
-              </View>
+            {/* Seats row */}
+            <View style={[styles.inputBox, { backgroundColor: c.inputBg, borderColor: c.border }]}>
+              <Text style={[styles.inputLabel, { color: c.textMuted }]}>Seats offered to passengers</Text>
+              <TextInput
+                style={[styles.textInput, { color: c.text }]}
+                value={seats}
+                onChangeText={setSeats}
+                keyboardType="numeric"
+                placeholder="1–6"
+                placeholderTextColor={c.textMuted}
+              />
             </View>
-            <Text style={[styles.hint, { color: c.textMuted }]}>
-              Each passenger pays ₹{fareSet ? (parseFloat(fareSet) / (parseInt(seats, 10) + 1 || 2)).toFixed(0) : '?'}
-            </Text>
+
+            {/* Live fare estimate preview */}
+            {fareLoading && (
+              <Text style={[styles.hint, { color: c.textMuted }]}>⏳ Calculating fare…</Text>
+            )}
+            {fareEstimate && !fareLoading && (
+              <View style={[styles.estimateBox, { backgroundColor: c.accentMuted, borderColor: c.accent }]}>
+                <Text style={[styles.estimateTitle, { color: c.accent }]}>💡 Fare estimate (15 km preview)</Text>
+                <View style={styles.row}>
+                  <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={[styles.estimateAmt, { color: c.text }]}>₹{fareEstimate.low.toFixed(0)}</Text>
+                    <Text style={[styles.estimateLabel, { color: c.textMuted }]}>Min/pax</Text>
+                  </View>
+                  <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={[styles.estimateAmt, { color: c.accent }]}>₹{fareEstimate.high.toFixed(0)}</Text>
+                    <Text style={[styles.estimateLabel, { color: c.textMuted }]}>Max/pax</Text>
+                  </View>
+                  <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={[styles.estimateAmt, { color: c.text }]}>₹{fareEstimate.cap.toFixed(0)}</Text>
+                    <Text style={[styles.estimateLabel, { color: c.textMuted }]}>Cap (trip)</Text>
+                  </View>
+                </View>
+                <Text style={[styles.hint, { color: c.textMuted, marginTop: 4 }]}>
+                  {fareEstimate.breakdown.fuel_type.toUpperCase()} · ₹{fareEstimate.breakdown.fuel_price}/unit
+                  · {fareEstimate.breakdown.distance_km} km · {fareEstimate.breakdown.claimed_kmpl ?? fareEstimate.breakdown.kwh_per_100km} {fareEstimate.breakdown.fuel_type === 'electric' ? 'kWh/100km' : 'kmpl'}
+                </Text>
+              </View>
+            )}
+
+            {/* Rider sets their total trip cost */}
+            <View style={[styles.inputBox, { backgroundColor: c.inputBg, borderColor: c.border }]}>
+              <Text style={[styles.inputLabel, { color: c.textMuted }]}>
+                Your total trip cost (₹){fareEstimate ? ` — max ₹${fareEstimate.cap.toFixed(0)}` : ''}
+              </Text>
+              <TextInput
+                style={[styles.textInput, { color: c.text }]}
+                value={fareSet}
+                onChangeText={setFareSet}
+                keyboardType="decimal-pad"
+                placeholder={fareEstimate ? `e.g. ${fareEstimate.cap.toFixed(0)}` : 'e.g. 80'}
+                placeholderTextColor={c.textMuted}
+              />
+            </View>
+            {fareSet && !isNaN(parseFloat(fareSet)) && (
+              <Text style={[styles.hint, { color: c.textMuted }]}>
+                Each passenger pays ≈ ₹{(parseFloat(fareSet) / ((parseInt(seats, 10) || 1) + 1)).toFixed(0)}
+              </Text>
+            )}
           </View>
 
           {/* Vehicle */}
@@ -429,6 +493,11 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   toggleLabel: { fontSize: 14, fontWeight: '600' },
   notesInput: { borderRadius: 10, borderWidth: 1, padding: 12, fontSize: 14, minHeight: 80, textAlignVertical: 'top' },
+  // Fare estimate card
+  estimateBox: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 8 },
+  estimateTitle: { fontSize: 12, fontWeight: '700' },
+  estimateAmt: { fontSize: 20, fontWeight: '800' },
+  estimateLabel: { fontSize: 10, fontWeight: '600', marginTop: 2 },
   // Picker modal
   pickerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
