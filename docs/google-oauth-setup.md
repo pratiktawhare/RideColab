@@ -69,21 +69,7 @@ To support Google Sign-In with Expo SDK 52+ without deprecated auth proxies, you
 
 ---
 
-## 3. Environment Variables Configuration
 
-### `client/.env`
-Update or create the `.env` file in the `client/` directory:
-```env
-# Backend API base URL
-EXPO_PUBLIC_API_URL=http://<YOUR_LOCAL_LAN_IP>:4000/api/v1
-
-# OpenFreeMap vector tiles
-EXPO_PUBLIC_MAP_TILE_URL=https://tiles.openfreemap.org/styles/liberty
-
-# Google OAuth IDs
-EXPO_PUBLIC_GOOGLE_CLIENT_ID=885726465755-oqfnt3lt81aijq7h6qnu36lraovp44vg.apps.googleusercontent.com
-EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=885726465755-76ijt8vm68kis7u3p9ormfj1t6157632.apps.googleusercontent.com
-```
 
 ### `server/.env`
 Ensure the server has the Web Client credentials:
