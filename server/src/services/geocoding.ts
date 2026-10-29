@@ -93,7 +93,7 @@ async function geocodeWithORS(q: string): Promise<GeoResult[]> {
   }
 
   // Call ORS
-  const url = `https://api.heigit.org/pelias/v1/search?api_key=${env.ORS_API_KEY}&text=${encodeURIComponent(q)}&boundary.country=IN&size=5`;
+  const url = `https://api.openrouteservice.org/geocode/search?api_key=${env.ORS_API_KEY}&text=${encodeURIComponent(q)}&boundary.country=IN&size=5`;
   logger.info({ q }, 'calling ORS geocoding');
 
   const response = await fetch(url, {

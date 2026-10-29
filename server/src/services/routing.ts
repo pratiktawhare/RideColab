@@ -37,7 +37,7 @@ async function fetchOrsRoute(
     return null;
   }
 
-  const url = 'https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson';
+  const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
   logger.info({ originLat, originLng, destLat, destLng }, 'calling ORS directions');
 
   const body = {
@@ -52,7 +52,7 @@ async function fetchOrsRoute(
     headers: {
       'Authorization': env.ORS_API_KEY,
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(10000),
@@ -129,12 +129,12 @@ export async function getRoute(
     `INSERT INTO route_cache (origin_lat, origin_lng, dest_lat, dest_lng,
        distance_m, duration_s, route)
      VALUES ($1, $2, $3, $4, $5, $6,
-       ST_GeogFromGeoJSON($7))
+       ST_SetSRID(ST_GeomFromGeoJSON($7), 4326)::geography)
      ON CONFLICT (origin_lat, origin_lng, dest_lat, dest_lng)
      DO UPDATE SET
        distance_m = $5,
        duration_s = $6,
-       route      = ST_GeogFromGeoJSON($7),
+       route      = ST_SetSRID(ST_GeomFromGeoJSON($7), 4326)::geography,
        created_at = NOW()`,
     [oLat, oLng, dLat, dLng, ors.distance_m, ors.duration_s, JSON.stringify(ors.geojson)],
   );

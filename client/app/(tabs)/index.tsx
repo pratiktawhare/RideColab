@@ -230,10 +230,74 @@ export default function HomeScreen() {
         )}
 
         {mode === 'passenger' && (
-          <View style={[styles.comingSoon, { backgroundColor: c.surface, borderColor: c.border }]}>
-            <Text style={{ fontSize: 32 }}>🔍</Text>
-            <Text style={[styles.comingSoonText, { color: c.textSecondary }]}>Ride matching coming in Phase 7</Text>
-          </View>
+          <>
+            <View style={styles.quickRow}>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <TouchableOpacity style={[styles.quickCard, { backgroundColor: c.surface, borderColor: c.border }]} onPress={() => router.push('/search-rides' as any)}>
+                <Text style={styles.quickIcon}>🔍</Text>
+                <Text style={[styles.quickLabel, { color: c.text }]}>Find a ride</Text>
+              </TouchableOpacity>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <TouchableOpacity style={[styles.quickCard, { backgroundColor: c.surface, borderColor: c.border }]} onPress={() => router.push('/(tabs)/activity' as any)}>
+                <Text style={styles.quickIcon}>🎫</Text>
+                <Text style={[styles.quickLabel, { color: c.text }]}>My bookings</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Popular commute corridors in Pune */}
+            <View style={[styles.routesCard, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Text style={[styles.sectionTitle, { color: c.text }]}>📍 Popular Pune Commutes</Text>
+              <Text style={[styles.sectionSubtitle, { color: c.textSecondary }]}>
+                Tap any corridor to check matching open rides
+              </Text>
+
+              <View style={{ gap: 8, marginTop: 4 }}>
+                {[
+                  {
+                    name: 'Hinjewadi ⇄ Kothrud',
+                    pickup: { label: 'Hinjewadi IT Park, Pune', lat: 18.5912, lng: 73.7386, source: 'landmark' as const },
+                    dropoff: { label: 'Kothrud, Pune', lat: 18.5074, lng: 73.8077, source: 'landmark' as const },
+                  },
+                  {
+                    name: 'Baner ⇄ Viman Nagar',
+                    pickup: { label: 'Baner, Pune', lat: 18.5590, lng: 73.7868, source: 'landmark' as const },
+                    dropoff: { label: 'Viman Nagar, Pune', lat: 18.5679, lng: 73.9143, source: 'landmark' as const },
+                  },
+                  {
+                    name: 'Swargate ⇄ Magarpatta City',
+                    pickup: { label: 'Swargate, Pune', lat: 18.5018, lng: 73.8576, source: 'landmark' as const },
+                    dropoff: { label: 'Magarpatta City, Hadapsar', lat: 18.5134, lng: 73.9315, source: 'landmark' as const },
+                  },
+                ].map((routeItem) => (
+                  <TouchableOpacity
+                    key={routeItem.name}
+                    style={[styles.routePill, { backgroundColor: c.background, borderColor: c.border }]}
+                    onPress={() => {
+                      handleOriginSelect(routeItem.pickup);
+                      handleDestinationSelect(routeItem.dropoff);
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      router.push('/search-rides' as any);
+                    }}
+                  >
+                    <Text style={styles.routePillIcon}>🚗</Text>
+                    <Text style={[styles.routePillText, { color: c.text }]}>{routeItem.name}</Text>
+                    <Text style={[styles.routePillArrow, { color: c.accent }]}>→</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Zero-profit guarantee */}
+            <View style={[styles.trustBox, { backgroundColor: c.accentMuted, borderColor: c.accent }]}>
+              <Text style={styles.trustBoxIcon}>🤝</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.trustBoxTitle, { color: c.accent }]}>100% Non-Profit Cost Sharing</Text>
+                <Text style={[styles.trustBoxDesc, { color: c.text }]}>
+                  Passengers only share direct ARAI fuel costs. Zero commission. Nobody profits.
+                </Text>
+              </View>
+            </View>
+          </>
         )}
       </ScrollView>
 
@@ -317,8 +381,24 @@ const styles = StyleSheet.create({
   quickCard: { flex: 1, borderRadius: 16, borderWidth: 1, padding: 16, alignItems: 'center', gap: 8 },
   quickIcon: { fontSize: 28 },
   quickLabel: { fontSize: 13, fontWeight: '600' },
-  comingSoon: { borderRadius: 16, padding: 24, borderWidth: 1, alignItems: 'center', gap: 8 },
-  comingSoonText: { fontSize: 14, textAlign: 'center' },
+  routesCard: { borderRadius: 20, padding: 16, borderWidth: 1, gap: 8 },
+  sectionTitle: { fontSize: 15, fontWeight: '700' },
+  sectionSubtitle: { fontSize: 12 },
+  routePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+    borderRadius: 12, borderWidth: 1,
+  },
+  routePillIcon: { fontSize: 16 },
+  routePillText: { fontSize: 14, fontWeight: '600', flex: 1 },
+  routePillArrow: { fontSize: 16, fontWeight: '700' },
+  trustBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 16, padding: 14, borderWidth: 1,
+  },
+  trustBoxIcon: { fontSize: 24 },
+  trustBoxTitle: { fontSize: 13, fontWeight: '700' },
+  trustBoxDesc: { fontSize: 12, marginTop: 2, lineHeight: 16 },
 
   // Full-screen overlay (no Modal — avoids white screen)
   fullMapRoot: {

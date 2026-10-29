@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Passenger search screen — Phase 7 Matching Engine
 // ─────────────────────────────────────────────────────────────
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, Switch, ActivityIndicator,
@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useThemeStore } from '@/store/themeStore';
+import { useTripsStore } from '@/store/tripsStore';
 import { PlaceSearch } from '@/components/PlaceSearch';
 import { AppButton } from '@/components/AppButton';
 import { searchApi, GeoResult, MatchResult } from '@/services/api';
@@ -118,9 +119,10 @@ export default function SearchRidesScreen() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { theme } = useThemeStore() as any;
   const c = theme.colors as Record<string, string>;
+  const { search: storeSearch, setOrigin, setDestination } = useTripsStore();
 
-  const [pickup, setPickup] = useState<GeoResult | null>(null);
-  const [dropoff, setDropoff] = useState<GeoResult | null>(null);
+  const [pickup, setPickup] = useState<GeoResult | null>(storeSearch.origin);
+  const [dropoff, setDropoff] = useState<GeoResult | null>(storeSearch.destination);
   const [womenOnly, setWomenOnly] = useState(false);
   const [seats, setSeats] = useState(1);
 
@@ -130,17 +132,27 @@ export default function SearchRidesScreen() {
 
   const canSearch = pickup && dropoff;
 
-  const handleSearch = useCallback(async () => {
-    if (!pickup || !dropoff) return;
+  const handlePickupSelect = (r: GeoResult) => {
+    setPickup(r);
+    setOrigin(r);
+  };
+
+  const handleDropoffSelect = (r: GeoResult) => {
+    setDropoff(r);
+    setDestination(r);
+  };
+
+  const handleSearch = useCallback(async (pOrigin = pickup, pDest = dropoff) => {
+    if (!pOrigin || !pDest) return;
     setLoading(true);
     setError(null);
     setResults(null);
     try {
       const data = await searchApi.searchRides({
-        pickup_lat:     pickup.lat,
-        pickup_lng:     pickup.lng,
-        dropoff_lat:    dropoff.lat,
-        dropoff_lng:    dropoff.lng,
+        pickup_lat:     pOrigin.lat,
+        pickup_lng:     pOrigin.lng,
+        dropoff_lat:    pDest.lat,
+        dropoff_lng:    pDest.lng,
         departure_time: new Date(Date.now() + 30 * 60_000).toISOString(), // 30 min from now
         seats,
         radius_m: 800,
@@ -153,6 +165,14 @@ export default function SearchRidesScreen() {
       setLoading(false);
     }
   }, [pickup, dropoff, seats, womenOnly]);
+
+  // Auto-search on mount if origin and destination were passed from Home screen
+  useEffect(() => {
+    if (storeSearch.origin && storeSearch.destination) {
+      handleSearch(storeSearch.origin, storeSearch.destination);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
@@ -175,14 +195,14 @@ export default function SearchRidesScreen() {
             <PlaceSearch
               label="Your pickup point"
               value={pickup?.label ?? ''}
-              onSelect={setPickup}
+              onSelect={handlePickupSelect}
               dotColor="🟢"
             />
             <View style={[styles.connector, { backgroundColor: c.border }]} />
             <PlaceSearch
               label="Drop-off destination"
               value={dropoff?.label ?? ''}
-              onSelect={setDropoff}
+              onSelect={handleDropoffSelect}
               dotColor="🔴"
             />
           </View>
