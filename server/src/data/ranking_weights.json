@@ -1,0 +1,8 @@
+{
+  "route_overlap": 0.30,
+  "time_fit": 0.25,
+  "detour": 0.20,
+  "trust": 0.15,
+  "preferences": 0.10
+}
+

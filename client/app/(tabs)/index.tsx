@@ -130,8 +130,14 @@ export default function HomeScreen() {
   const handleOriginSelect = (r: GeoResult) => { setOriginLocal(r); setOrigin(r); };
   const handleDestinationSelect = (r: GeoResult) => { setDestinationLocal(r); setDestination(r); };
   const handleAction = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    router.push('/post-trip' as any);
+    if (mode === 'rider') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.push('/post-trip' as any);
+    } else {
+      // Phase 7: go to passenger search screen
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.push('/search-rides' as any);
+    }
   };
 
   const recenter = (ref: React.MutableRefObject<CameraRef | null>) => {

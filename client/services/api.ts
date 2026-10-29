@@ -208,6 +208,7 @@ export interface CreateTripPayload {
   is_recurring?: boolean;
   rrule?: string;
   notes?: string;
+  is_women_only?: boolean;
 }
 
 export const tripsApi = {
@@ -229,4 +230,61 @@ export const healthApi = {
     fetch(`${env.API_URL}/health`)
       .then((r) => r.json() as Promise<{ success: boolean }>)
       .catch(() => ({ success: false })),
+};
+
+// ─── Search (Phase 7) ──────────────────────────────────────────
+export interface SmartPickup {
+  lat: number;
+  lng: number;
+  landmark: string | null;
+}
+
+export interface MatchResult {
+  trip_id: string;
+  rider_id: string;
+  rider_name: string;
+  trust_score: number;
+  departure_time: string;
+  origin_label: string;
+  destination_label: string;
+  seats_available: number;
+  fare_set: number | null;
+  fare_cap: number;
+  is_women_only: boolean;
+  vehicle_type: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  registration_suffix: string;
+  community_id: string | null;
+  notes: string | null;
+  smart_pickup: SmartPickup;
+  score: number;
+  score_breakdown: {
+    route_overlap: number;
+    time_fit: number;
+    detour: number;
+    trust: number;
+    preferences: number;
+  };
+}
+
+export interface RideSearchParams {
+  pickup_lat: number;
+  pickup_lng: number;
+  dropoff_lat: number;
+  dropoff_lng: number;
+  departure_time: string;
+  seats?: number;
+  radius_m?: number;
+  women_only?: boolean;
+  community_id?: string | null;
+  vehicle_type?: string | null;
+}
+
+export const searchApi = {
+  searchRides: (params: RideSearchParams) =>
+    request<MatchResult[]>('/search/rides', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
 };

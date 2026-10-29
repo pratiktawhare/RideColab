@@ -45,6 +45,7 @@ export default function PostTripScreen() {
   const [vehicleId, setVehicleId] = useState('');
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [isRecurring, setIsRecurring] = useState(false);
+  const [isWomenOnly, setIsWomenOnly] = useState(false);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -159,6 +160,7 @@ export default function PostTripScreen() {
         vehicle_id: vehicleId,
         is_recurring: isRecurring,
         rrule: isRecurring ? 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' : undefined,
+        is_women_only: isWomenOnly,
         notes: notes.trim() || undefined,
       };
 
@@ -354,6 +356,24 @@ export default function PostTripScreen() {
               <Switch
                 value={isRecurring}
                 onValueChange={setIsRecurring}
+                trackColor={{ false: c.border, true: c.accent }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+
+          {/* Women only toggle */}
+          <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <View style={styles.toggleRow}>
+              <View>
+                <Text style={[styles.toggleLabel, { color: c.text }]}>👩 Women-only ride</Text>
+                <Text style={[styles.hint, { color: c.textMuted, marginTop: 2 }]}>
+                  Only female passengers can discover this ride
+                </Text>
+              </View>
+              <Switch
+                value={isWomenOnly}
+                onValueChange={setIsWomenOnly}
                 trackColor={{ false: c.border, true: c.accent }}
                 thumbColor="#fff"
               />

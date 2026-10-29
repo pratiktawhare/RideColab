@@ -24,6 +24,7 @@ const CreateTripSchema = z.object({
   is_recurring:  z.boolean().default(false),
   rrule:         z.string().optional(),
   notes:         z.string().max(500).optional(),
+  is_women_only: z.boolean().default(false),
 });
 
 const UpdateTripSchema = z.object({
@@ -155,12 +156,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           route, distance_m, duration_s,
           depart_at, seats_total, seats_available,
           fare_set, fare_cap, status,
-          community_id, is_recurring, rrule, notes
+          community_id, is_recurring, rrule, notes, is_women_only
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
           ST_GeogFromText($9),$10,$11,
           $12,$13,$13,$14,$15,'open',
-          $16,$17,$18,$19
+          $16,$17,$18,$19,$20
         ) RETURNING id`,
         [
           riderId,
@@ -182,6 +183,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           data.is_recurring,
           data.rrule ?? null,
           data.notes ?? null,
+          data.is_women_only,
         ],
       );
 

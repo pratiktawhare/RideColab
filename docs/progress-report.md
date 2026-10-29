@@ -15,7 +15,7 @@
 | 4 | Mobile App Shell and Design System | ✅ Complete | `501e024` | User | 2026-10-22 |
 | 5 | Maps, Geocoding, Routing and Trip Posting | ✅ Complete | `0ef6bdf` | User | 2026-10-26 |
 | 6 | Fare Engine | ✅ Complete | `abdb074` | User | 2026-10-28 |
-| 7 | Matching Engine | ⏳ Not started | — | — | — |
+| 7 | Matching Engine | ✅ Complete | `phase-7` | Pending | 2026-10-29 |
 | 8 | Booking Flow | ⏳ Not started | — | — | — |
 | 9 | Live Ride and Safety | ⏳ Not started | — | — | — |
 | 10 | Payments, Ratings and Trust | ⏳ Not started | — | — | — |
@@ -339,7 +339,74 @@ tsc --noEmit: 0 errors (client + server)
 ---
 
 ### Phase 7 Report
-**Status**: ⏳ Not started
+**Status**: ✅ Complete — committed `phase-7` — 2026-10-29
+
+#### What was built
+- **Database Migration (`server/src/db/migrations/002_phase7_women_only.sql`)**:
+  - Added `is_women_only` column and partial index on `trips` table.
+- **Matching Engine Service (`server/src/services/matching.ts`)**:
+  - Two-stage matching pipeline: PostGIS corridor filter followed by configurable JS scoring.
+  - PostGIS corridor query: `ST_DWithin` on route geography for pickup & dropoff within corridor radius, `ST_LineLocatePoint` sequence check ensuring pickup is strictly before dropoff along the rider's route.
+  - Zero ORS calls at search time (uses stored PostGIS line geometry).
+  - Smart pickup point: calculates `ST_ClosestPoint` on route to passenger pickup, queries nearest Pune landmark within 200m for human-friendly meeting spot.
+  - Hot-reloadable ranking weights (`server/src/data/ranking_weights.json`) with `fs.watch` file reload without process restart.
+- **Search API Route (`server/src/routes/search.ts`)**:
+  - `POST /api/v1/search/rides` (JWT-guarded, Zod validation).
+  - Filters by departure time window (±30 min), requested seats, corridor radius, women-only preference, vehicle type, and community.
+- **Rider Trip Posting Update (`server/src/routes/trips.ts`)**:
+  - Added `is_women_only` support to trip creation schema and INSERT query.
+- **Client Search & Matching UI (`client/app/search-rides.tsx`)**:
+  - Full passenger ride search screen with debounced `PlaceSearch` for pickup and destination.
+  - Seat count stepper (1–6 seats) and women-only filter switch.
+  - Results list rendering `RideMatchCard`: match percentage badge, rider trust score, route visualizer, smart pickup meeting spot chip, date & time, vehicle info, fare per passenger, and "Why this match?" transparency breakdown.
+- **Client App Navigation (`client/app/(tabs)/index.tsx` & `client/app/post-trip.tsx`)**:
+  - "Search rides →" on Home screen in passenger mode routes to `/search-rides`.
+  - Added "Women-only ride" toggle to `/post-trip` for riders.
+- **Client API Service (`client/services/api.ts`)**:
+  - Added `searchApi.searchRides(params)` and typed `MatchResult`, `SmartPickup`, `RideSearchParams`.
+
+#### Acceptance Checklist
+- [x] Seed trips across Pune; search Hinjewadi → Kothrud returns ranked matches.
+- [x] Smart pickup point is on the route line (`ST_DWithin` verified in test).
+- [x] Out-of-order trips excluded (reversed search returns 0 matches).
+- [x] Women-only filter verified in tests (only women-only rides returned when set).
+- [x] Response time < 2s with seeded trips.
+- [x] Editing `ranking_weights.json` changes weights dynamically without server restart.
+- [x] TypeScript clean: `tsc --noEmit` 0 errors on both server and client.
+- [x] All 96 tests across all 6 test suites pass cleanly.
+
+#### Test results
+```
+PASS tests/phase7.test.ts (24.857 s) — 15 tests
+  Phase 7 — Matching Engine
+    POST /api/v1/search/rides — auth
+      ✓ requires JWT
+      ✓ rejects missing fields
+    Basic corridor search
+      ✓ returns ≥ 1 match for Hinjewadi → Kothrud
+      ✓ result has required fields
+      ✓ score is between 0 and 1
+      ✓ results sorted by score descending
+    Out-of-order trip exclusion
+      ✓ does not return trip where pickup is AFTER dropoff on route
+    Women-only filter
+      ✓ women_only=true returns only women-only trips
+      ✓ women_only=false returns all trips
+    Departure time window
+      ✓ excludes trips outside ±30 min window
+    Seats filter
+      ✓ excludes trips with fewer available seats than requested
+    Cancelled trips excluded
+      ✓ cancelled trip not returned
+    Smart pickup point
+      ✓ smart_pickup lat/lng is on or near the route
+    Configurable ranking weights
+      ✓ hot-reloading ranking_weights.json updates current weights
+    Performance
+      ✓ returns in < 2 s even with 20 seeded trips
+
+All 6 suites: 96 passed, 96 total
+```
 
 ---
 
