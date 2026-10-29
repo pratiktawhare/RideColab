@@ -25,11 +25,32 @@ export default function PostTripScreen() {
   const router = useRouter();
   const { theme } = useThemeStore();
   const { user } = useAuthStore();
-  const { prependTrip } = useTripsStore();
+  const {
+    prependTrip,
+    search: storeSearch,
+    setOrigin: setStoreOrigin,
+    setDestination: setStoreDest,
+  } = useTripsStore();
   const c = theme.colors;
 
-  const [origin, setOrigin] = useState<GeoResult | null>(null);
-  const [destination, setDestination] = useState<GeoResult | null>(null);
+  const [origin, setOrigin] = useState<GeoResult | null>(storeSearch.origin);
+  const [destination, setDestination] = useState<GeoResult | null>(storeSearch.destination);
+
+  // Sync if store search values update
+  useEffect(() => {
+    if (storeSearch.origin) setOrigin(storeSearch.origin);
+    if (storeSearch.destination) setDestination(storeSearch.destination);
+  }, [storeSearch.origin, storeSearch.destination]);
+
+  const handleOriginSelect = (r: GeoResult) => {
+    setOrigin(r);
+    setStoreOrigin(r);
+  };
+
+  const handleDestinationSelect = (r: GeoResult) => {
+    setDestination(r);
+    setStoreDest(r);
+  };
   const [departAt, setDepartAt] = useState<Date>(() => {
     const d = new Date();
     d.setMinutes(d.getMinutes() + 30, 0, 0);
@@ -80,17 +101,30 @@ export default function PostTripScreen() {
 
   // Live fare estimate — refetch whenever vehicle, seats, or route changes
   useEffect(() => {
-    // Need: vehicleId + route distance (we use ~15km placeholder if no distance yet)
-    // The actual distance comes from the server when the trip is created.
-    // For the preview we use a best-guess straight-line dist until ORS runs.
     if (!vehicleId) { setFareEstimate(null); return; }
     const seatsNum = Math.max(1, parseInt(seats, 10) || 1);
     let cancelled = false;
     const fetchEstimate = async () => {
       setFareLoading(true);
       try {
-        // Use 15 km placeholder if no route yet; server will re-calculate exact on create
-        const est = await fareApi.estimate(vehicleId, 15_000, seatsNum);
+        let distM = 15_000;
+        if (origin && destination) {
+          // Haversine formula with 1.35x road factor for Pune roads
+          const R = 6371e3;
+          const toRad = (deg: number) => (deg * Math.PI) / 180;
+          const dLat = toRad(destination.lat - origin.lat);
+          const dLng = toRad(destination.lng - origin.lng);
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(origin.lat)) *
+              Math.cos(toRad(destination.lat)) *
+              Math.sin(dLng / 2) *
+              Math.sin(dLng / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          distM = Math.max(1000, Math.round(R * c * 1.35));
+        }
+
+        const est = await fareApi.estimate(vehicleId, distM, seatsNum);
         if (!cancelled) {
           setFareEstimate(est);
           // Pre-fill fare_set to cap so rider sees the max they can charge
@@ -104,7 +138,7 @@ export default function PostTripScreen() {
     };
     void fetchEstimate();
     return () => { cancelled = true; };
-  }, [vehicleId, seats]);
+  }, [vehicleId, seats, origin, destination]);
 
   const openDatePicker = () => { setTmpDate(new Date(departAt)); setShowPicker('date'); };
   const openTimePicker = () => { setTmpDate(new Date(departAt)); setShowPicker('time'); };
@@ -205,14 +239,14 @@ export default function PostTripScreen() {
               <PlaceSearch
                 label="Pickup point"
                 value={origin?.label ?? ''}
-                onSelect={setOrigin}
+                onSelect={handleOriginSelect}
                 dotColor="🟢"
               />
               <View style={[styles.routeConnector, { backgroundColor: c.border }]} />
               <PlaceSearch
                 label="Destination"
                 value={destination?.label ?? ''}
-                onSelect={setDestination}
+                onSelect={handleDestinationSelect}
                 dotColor="🔴"
               />
             </View>
@@ -263,7 +297,9 @@ export default function PostTripScreen() {
             )}
             {fareEstimate && !fareLoading && (
               <View style={[styles.estimateBox, { backgroundColor: c.accentMuted, borderColor: c.accent }]}>
-                <Text style={[styles.estimateTitle, { color: c.accent }]}>💡 Fare estimate (15 km preview)</Text>
+                <Text style={[styles.estimateTitle, { color: c.accent }]}>
+                  💡 Fare estimate {origin && destination ? `(~${fareEstimate.breakdown.distance_km} km)` : '(15 km preview)'}
+                </Text>
                 <View style={styles.row}>
                   <View style={{ flex: 1, alignItems: 'center' }}>
                     <Text style={[styles.estimateAmt, { color: c.text }]}>₹{fareEstimate.low.toFixed(0)}</Text>

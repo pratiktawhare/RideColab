@@ -31,9 +31,11 @@ import * as ExpoLocation from 'expo-location';
 function RideMap({
   cameraRef,
   position,
+  onMapLoaded,
 }: {
   cameraRef: React.MutableRefObject<CameraRef | null>;
   position: ReturnType<typeof useCurrentPosition> | undefined;
+  onMapLoaded?: () => void;
 }) {
   const mapStyle = env.MAP_TILE_URL || 'https://tiles.openfreemap.org/styles/liberty';
   return (
@@ -42,6 +44,7 @@ function RideMap({
       mapStyle={mapStyle}
       // compass bottom-left — away from all our overlay buttons
       compassPosition={{ bottom: 80, left: 12 }}
+      onDidFinishLoadingMap={onMapLoaded}
     >
       <MapLibreCamera
         ref={cameraRef}
@@ -86,7 +89,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const { theme } = useThemeStore();
   const { user, setUser } = useAuthStore();
-  const { setOrigin, setDestination } = useTripsStore();
+  const { search: storeSearch, setOrigin, setDestination } = useTripsStore();
   const c = theme.colors;
   const insets = useSafeAreaInsets();
 
@@ -95,6 +98,8 @@ export default function HomeScreen() {
   const position = useCurrentPosition({ enabled: true });
   const [mapExpanded, setMapExpanded] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [fullMapLoaded, setFullMapLoaded] = useState(false);
 
   // Request location permission on mount
   useEffect(() => {
@@ -103,21 +108,40 @@ export default function HomeScreen() {
       .catch(() => setLocationGranted(false));
   }, []);
 
-  // Fly to GPS once it arrives
+  const safeFlyTo = (ref: React.MutableRefObject<CameraRef | null>, center: [number, number]) => {
+    try {
+      const res = ref.current?.flyTo({ center, duration: 1500 });
+      if (res && typeof (res as Promise<unknown>).catch === 'function') {
+        (res as Promise<unknown>).catch(() => {});
+      }
+    } catch {
+      // safe fallback if native view is detached
+    }
+  };
+
+  // Fly to GPS once it arrives AND map native view is ready
   useEffect(() => {
     const lng = position?.coords.longitude;
     const lat = position?.coords.latitude;
     if (!lng || !lat) return;
-    cameraRef.current?.flyTo({ center: [lng, lat] as [number, number] });
-    if (mapExpanded) {
-      fullCameraRef.current?.flyTo({ center: [lng, lat] as [number, number] });
+    if (mapLoaded) {
+      safeFlyTo(cameraRef, [lng, lat]);
+    }
+    if (mapExpanded && fullMapLoaded) {
+      safeFlyTo(fullCameraRef, [lng, lat]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position?.coords.longitude, position?.coords.latitude]);
+  }, [position?.coords.longitude, position?.coords.latitude, mapLoaded, mapExpanded, fullMapLoaded]);
 
   const [mode, setMode] = useState<'rider' | 'passenger'>(user?.mode ?? 'passenger');
-  const [origin, setOriginLocal] = useState<GeoResult | null>(null);
-  const [destination, setDestinationLocal] = useState<GeoResult | null>(null);
+  const [origin, setOriginLocal] = useState<GeoResult | null>(storeSearch.origin);
+  const [destination, setDestinationLocal] = useState<GeoResult | null>(storeSearch.destination);
+
+  // Keep local state in sync with tripsStore
+  useEffect(() => {
+    if (storeSearch.origin) setOriginLocal(storeSearch.origin);
+    if (storeSearch.destination) setDestinationLocal(storeSearch.destination);
+  }, [storeSearch.origin, storeSearch.destination]);
 
   const handleModeChange = async (next: 'rider' | 'passenger') => {
     setMode(next);
@@ -130,6 +154,8 @@ export default function HomeScreen() {
   const handleOriginSelect = (r: GeoResult) => { setOriginLocal(r); setOrigin(r); };
   const handleDestinationSelect = (r: GeoResult) => { setDestinationLocal(r); setDestination(r); };
   const handleAction = () => {
+    if (origin) setOrigin(origin);
+    if (destination) setDestination(destination);
     if (mode === 'rider') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       router.push('/post-trip' as any);
@@ -142,7 +168,7 @@ export default function HomeScreen() {
 
   const recenter = (ref: React.MutableRefObject<CameraRef | null>) => {
     const p = position?.coords;
-    if (p) ref.current?.flyTo({ center: [p.longitude, p.latitude] as [number, number] });
+    if (p) safeFlyTo(ref, [p.longitude, p.latitude]);
   };
 
   const greeting = () => {
@@ -178,7 +204,7 @@ export default function HomeScreen() {
 
         {/* Mini map — clipped, overlays positioned as siblings */}
         <View style={styles.mapContainer}>
-          <RideMap cameraRef={cameraRef} position={activePos} />
+          <RideMap cameraRef={cameraRef} position={activePos} onMapLoaded={() => setMapLoaded(true)} />
 
           {/* ── Right control rail (Google Maps style) ── */}
           <View style={styles.mapRailRight}>
@@ -217,7 +243,14 @@ export default function HomeScreen() {
         {mode === 'rider' && (
           <View style={styles.quickRow}>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <TouchableOpacity style={[styles.quickCard, { backgroundColor: c.surface, borderColor: c.border }]} onPress={() => router.push('/post-trip' as any)}>
+            <TouchableOpacity
+              style={[styles.quickCard, { backgroundColor: c.surface, borderColor: c.border }]}
+              onPress={() => {
+                if (origin) setOrigin(origin);
+                if (destination) setDestination(destination);
+                router.push('/post-trip' as any);
+              }}
+            >
               <Text style={styles.quickIcon}>🚗</Text>
               <Text style={[styles.quickLabel, { color: c.text }]}>Post a trip</Text>
             </TouchableOpacity>
@@ -306,12 +339,12 @@ export default function HomeScreen() {
         <View style={[styles.fullMapRoot, { paddingTop: insets.top }]}>
           <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
           {/* Map fills entire root */}
-          <RideMap cameraRef={fullCameraRef} position={activePos} />
+          <RideMap cameraRef={fullCameraRef} position={activePos} onMapLoaded={() => setFullMapLoaded(true)} />
 
           {/* ── Google-Maps-style top bar ── */}
           <View style={styles.fullTopBar} pointerEvents="box-none">
             {/* Close button — top-left */}
-            <TouchableOpacity style={styles.fullCloseBtn} onPress={() => setMapExpanded(false)} accessibilityLabel="Close fullscreen map">
+            <TouchableOpacity style={styles.fullCloseBtn} onPress={() => { setMapExpanded(false); setFullMapLoaded(false); }} accessibilityLabel="Close fullscreen map">
               <Text style={styles.fullCloseBtnText}>✕</Text>
             </TouchableOpacity>
 

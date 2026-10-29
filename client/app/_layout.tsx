@@ -2,7 +2,7 @@
 // Root layout — providers, auth gate, cold-start detection
 // ─────────────────────────────────────────────────────────────
 import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { View, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,6 +13,13 @@ import { useThemeStore, hydrateTheme } from '@/store/themeStore';
 import { ColdStartScreen } from '@/components/ColdStartScreen';
 import { healthApi } from '@/services/api';
 import '@/i18n'; // initialise i18n
+
+// Ignore known MapLibre Native tag resolver asynchronous race condition on unmount
+LogBox.ignoreLogs([
+  'MapLibre Native [ERROR] [ReactTagResolver]',
+  'reactTag',
+  'resolved to `view` null',
+]);
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
