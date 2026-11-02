@@ -15,63 +15,9 @@ import { RiderPassengerToggle } from '@/components/RiderPassengerToggle';
 import { PlaceSearch } from '@/components/PlaceSearch';
 import { AppButton } from '@/components/AppButton';
 import { userApi, GeoResult } from '@/services/api';
-import {
-  Map as MapLibreMap,
-  Camera as MapLibreCamera,
-  UserLocation,
-  useCurrentPosition,
-  type CameraRef,
-} from '@maplibre/maplibre-react-native';
+import { RideMap, useCurrentPosition, type CameraRef } from '@/components/RideMap';
 import { env } from '@/constants/env';
 import * as ExpoLocation from 'expo-location';
-
-// ── Pure map component (NO custom children — only MapLibre-native) ──────────
-// All overlay controls (buttons, badges) MUST live OUTSIDE this component
-// as sibling Views using absolute positioning.
-function RideMap({
-  cameraRef,
-  position,
-  onMapLoaded,
-  onUnmount,
-}: {
-  cameraRef: React.MutableRefObject<CameraRef | null>;
-  position: ReturnType<typeof useCurrentPosition> | undefined;
-  onMapLoaded?: () => void;
-  onUnmount?: () => void;
-}) {
-  const mapStyle = env.MAP_TILE_URL || 'https://tiles.openfreemap.org/styles/liberty';
-
-  // Signal parent that this native view is gone so camera calls are skipped
-  useEffect(() => {
-    return () => {
-      cameraRef.current = null;
-      onUnmount?.();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <MapLibreMap
-      style={StyleSheet.absoluteFill}
-      mapStyle={mapStyle}
-      // compass bottom-left — away from all our overlay buttons
-      compassPosition={{ bottom: 80, left: 12 }}
-      onDidFinishLoadingMap={onMapLoaded}
-    >
-      <MapLibreCamera
-        ref={cameraRef}
-        initialViewState={{
-          center: [
-            position?.coords.longitude ?? 73.8567,
-            position?.coords.latitude ?? 18.5204,
-          ] as [number, number],
-          zoom: position ? 14 : 11,
-        }}
-      />
-      {position && <UserLocation animated accuracy heading />}
-    </MapLibreMap>
-  );
-}
 
 // ── Floating pill button (white, always readable over any map tile) ──────────
 function MapBtn({
@@ -112,6 +58,8 @@ export default function HomeScreen() {
   const [locationGranted, setLocationGranted] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [fullMapLoaded, setFullMapLoaded] = useState(false);
+  const hasCenteredRef = useRef(false);
+  const hasFullCenteredRef = useRef(false);
 
   // Request location permission on mount
   useEffect(() => {
@@ -133,19 +81,21 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Fly to GPS once it arrives AND map native view is ready
+  // Center on GPS ONCE when location first resolves and map is ready
   useEffect(() => {
     const lng = position?.coords.longitude;
     const lat = position?.coords.latitude;
     if (!lng || !lat) return;
-    if (mapLoaded) {
+
+    if (mapLoaded && !hasCenteredRef.current) {
+      hasCenteredRef.current = true;
       safeFlyTo(cameraRef, [lng, lat]);
     }
-    if (mapExpanded && fullMapLoaded) {
+    if (mapExpanded && fullMapLoaded && !hasFullCenteredRef.current) {
+      hasFullCenteredRef.current = true;
       safeFlyTo(fullCameraRef, [lng, lat]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position?.coords.longitude, position?.coords.latitude, mapLoaded, mapExpanded, fullMapLoaded]);
+  }, [position?.coords.longitude, position?.coords.latitude, mapLoaded, mapExpanded, fullMapLoaded, safeFlyTo]);
 
   const [mode, setMode] = useState<'rider' | 'passenger'>(user?.mode ?? 'passenger');
   const [origin, setOriginLocal] = useState<GeoResult | null>(storeSearch.origin);
@@ -360,6 +310,7 @@ export default function HomeScreen() {
             {/* Close button — top-left */}
             <TouchableOpacity style={styles.fullCloseBtn} onPress={() => {
               fullCameraRef.current = null; // detach before unmount to silence reactTag errors
+              hasFullCenteredRef.current = false;
               setMapExpanded(false);
               setFullMapLoaded(false);
             }} accessibilityLabel="Close fullscreen map">

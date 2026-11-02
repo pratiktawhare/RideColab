@@ -20,6 +20,10 @@ LogBox.ignoreLogs([
   'MapLibre Native [ERROR] [ReactTagResolver]',
   'reactTag',
   'resolved to `view` null',
+  /MapLibre Native.*ReactTagResolver/,
+  /ReactTagResolver.*resolved to.*view.*null/,
+  /`reactTag`.*resolved to `view` null/,
+  /java\.lang\.Throwable: `reactTag`.*resolved to `view` null/,
 ]);
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
