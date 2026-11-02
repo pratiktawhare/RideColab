@@ -253,8 +253,17 @@ export default function BookingDetailScreen() {
               </Text>
             </View>
             <View style={styles.infoGrid}>
-              <InfoRow label="Rider" value={booking.rider_name ?? '—'} c={c} />
-              <InfoRow label="Trust score" value={`⭐ ${booking.rider_trust ?? '—'}`} c={c} />
+              {isRider ? (
+                <>
+                  <InfoRow label="Passenger" value={booking.passenger_name ?? 'Passenger'} c={c} />
+                  <InfoRow label="Trust score" value={`⭐ ${booking.passenger_trust ?? '50'}`} c={c} />
+                </>
+              ) : (
+                <>
+                  <InfoRow label="Rider" value={booking.rider_name ?? '—'} c={c} />
+                  <InfoRow label="Trust score" value={`⭐ ${booking.rider_trust ?? '—'}`} c={c} />
+                </>
+              )}
               {booking.vehicle_make ? (
                 <InfoRow label="Vehicle" value={`${booking.vehicle_make} ${booking.vehicle_model}`} c={c} />
               ) : null}

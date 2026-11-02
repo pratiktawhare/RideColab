@@ -318,6 +318,8 @@ export interface Booking {
   depart_at: string;
   rider_name: string;
   rider_trust: number;
+  passenger_name?: string;
+  passenger_trust?: number;
   vehicle_make: string;
   vehicle_model: string;
   plate_number: string;

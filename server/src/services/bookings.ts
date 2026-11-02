@@ -34,6 +34,8 @@ export interface BookingRow {
   depart_at: string;
   rider_name: string;
   rider_trust: number;
+  passenger_name?: string;
+  passenger_trust?: number;
   vehicle_make: string;
   vehicle_model: string;
   plate_number: string;
@@ -178,14 +180,19 @@ export async function getBookingById(
   const runner = client ?? { query };
   const res = await runner.query<BookingRow>(
     `SELECT b.*,
+            t.rider_id,
             t.origin_label, t.dest_label, t.depart_at,
             u.name AS rider_name,
             COALESCE(ts.score, 50) AS rider_trust,
+            p.name AS passenger_name,
+            COALESCE(pts.score, 50) AS passenger_trust,
             vc.make AS vehicle_make, vc.model AS vehicle_model, v.plate_number
      FROM bookings b
      JOIN trips t ON t.id = b.trip_id
      JOIN users u ON u.id = t.rider_id
+     LEFT JOIN users p ON p.id = b.passenger_id
      LEFT JOIN trust_scores ts ON ts.user_id = t.rider_id
+     LEFT JOIN trust_scores pts ON pts.user_id = b.passenger_id
      LEFT JOIN vehicles v ON v.id = t.vehicle_id
      LEFT JOIN vehicle_catalog vc ON vc.id = v.catalog_id
      WHERE b.id = $1
@@ -199,14 +206,19 @@ export async function getBookingById(
 export async function getMyBookings(userId: string): Promise<BookingRow[]> {
   const res = await query<BookingRow>(
     `SELECT b.*,
+            t.rider_id,
             t.origin_label, t.dest_label, t.depart_at,
             u.name AS rider_name,
             COALESCE(ts.score, 50) AS rider_trust,
+            p.name AS passenger_name,
+            COALESCE(pts.score, 50) AS passenger_trust,
             vc.make AS vehicle_make, vc.model AS vehicle_model, v.plate_number
      FROM bookings b
      JOIN trips t ON t.id = b.trip_id
      JOIN users u ON u.id = t.rider_id
+     LEFT JOIN users p ON p.id = b.passenger_id
      LEFT JOIN trust_scores ts ON ts.user_id = t.rider_id
+     LEFT JOIN trust_scores pts ON pts.user_id = b.passenger_id
      LEFT JOIN vehicles v ON v.id = t.vehicle_id
      LEFT JOIN vehicle_catalog vc ON vc.id = v.catalog_id
      WHERE b.passenger_id = $1 OR t.rider_id = $1
