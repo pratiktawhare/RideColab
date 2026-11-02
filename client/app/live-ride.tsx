@@ -342,6 +342,62 @@ export default function LiveRideScreen() {
   const isRider = booking.rider_id === user?.id;
   const isCompleted = booking.status === 'completed';
 
+  // Overall trip origin and destination
+  const tripOrigin =
+    booking.origin_lat != null && booking.origin_lng != null
+      ? {
+          lat: Number(booking.origin_lat),
+          lng: Number(booking.origin_lng),
+          label: booking.origin_label,
+        }
+      : null;
+
+  const tripDestination =
+    booking.dest_lat != null && booking.dest_lng != null
+      ? {
+          lat: Number(booking.dest_lat),
+          lng: Number(booking.dest_lng),
+          label: booking.dest_label,
+        }
+      : null;
+
+  // Passenger specific pickup and dropoff points
+  const passengerPickup =
+    booking.pickup_lat != null && booking.pickup_lng != null
+      ? {
+          lat: Number(booking.pickup_lat),
+          lng: Number(booking.pickup_lng),
+          label: booking.pickup_label ?? booking.origin_label,
+        }
+      : null;
+
+  const passengerDropoff =
+    booking.dropoff_lat != null && booking.dropoff_lng != null
+      ? {
+          lat: Number(booking.dropoff_lat),
+          lng: Number(booking.dropoff_lng),
+          label: booking.dropoff_label ?? booking.dest_label,
+        }
+      : null;
+
+  // Primary origin & destination for this participant's ride view
+  // Passenger: their ride is pickup → dropoff
+  // Rider: full trip origin → dest, with passenger pickup highlighted
+  const primaryOrigin = isRider
+    ? tripOrigin ?? passengerPickup
+    : passengerPickup ?? tripOrigin;
+
+  const primaryDestination = isRider
+    ? tripDestination ?? passengerDropoff
+    : passengerDropoff ?? tripDestination;
+
+  const displayFrom = !isRider
+    ? passengerPickup?.label ?? booking.origin_label
+    : booking.origin_label;
+  const displayTo = !isRider
+    ? passengerDropoff?.label ?? booking.dest_label
+    : booking.dest_label;
+
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
       {/* ── Header ── */}
@@ -351,10 +407,12 @@ export default function LiveRideScreen() {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {booking.origin_label} → {booking.dest_label}
+            {displayFrom} → {displayTo}
           </Text>
           <Text style={styles.headerSub}>
             {socketReady ? '🟢 Live' : '⏳ Connecting…'}
+            {isRider && booking.passenger_name ? ` • Passenger: ${booking.passenger_name}` : ''}
+            {!isRider && booking.rider_name ? ` • Rider: ${booking.rider_name}` : ''}
           </Text>
         </View>
       </View>
@@ -378,21 +436,13 @@ export default function LiveRideScreen() {
         <LiveRideMap
           locations={locations}
           myUserId={user?.id ?? ''}
+          riderId={booking.rider_id}
+          isRider={isRider}
           routeGeoJson={booking.route_geojson}
-          origin={
-            booking.origin_lat != null && booking.origin_lng != null
-              ? { lat: Number(booking.origin_lat), lng: Number(booking.origin_lng), label: booking.origin_label }
-              : booking.pickup_lat != null && booking.pickup_lng != null
-              ? { lat: Number(booking.pickup_lat), lng: Number(booking.pickup_lng), label: booking.pickup_label ?? undefined }
-              : null
-          }
-          destination={
-            booking.dest_lat != null && booking.dest_lng != null
-              ? { lat: Number(booking.dest_lat), lng: Number(booking.dest_lng), label: booking.dest_label }
-              : booking.dropoff_lat != null && booking.dropoff_lng != null
-              ? { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng), label: booking.dropoff_label ?? undefined }
-              : null
-          }
+          origin={primaryOrigin}
+          destination={primaryDestination}
+          pickup={passengerPickup}
+          dropoff={passengerDropoff}
           bottomPadding={0}
         />
         {locations.length === 0 ? (

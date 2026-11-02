@@ -238,20 +238,34 @@ export default function BookingDetailScreen() {
 
           {/* ── Trip Info ── */}
           <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-            <Text style={[styles.cardTitle, { color: c.text }]}>Trip Route</Text>
+            <Text style={[styles.cardTitle, { color: c.text }]}>
+              {isPassenger ? 'Your Ride Leg' : 'Trip Route'}
+            </Text>
             <View style={styles.routeRow}>
               <Text style={[styles.routeDot, { color: '#10B981' }]}>●</Text>
               <Text style={[styles.routeText, { color: c.text }]} numberOfLines={2}>
-                {booking.origin_label ?? booking.pickup_label ?? '—'}
+                {isPassenger
+                  ? (booking.pickup_label ?? booking.origin_label ?? '—')
+                  : (booking.origin_label ?? booking.pickup_label ?? '—')}
               </Text>
             </View>
             <View style={[styles.routeLine, { backgroundColor: c.border }]} />
             <View style={styles.routeRow}>
               <Text style={[styles.routeDot, { color: '#EF4444' }]}>●</Text>
               <Text style={[styles.routeText, { color: c.text }]} numberOfLines={2}>
-                {booking.dest_label ?? booking.dropoff_label ?? '—'}
+                {isPassenger
+                  ? (booking.dropoff_label ?? booking.dest_label ?? '—')
+                  : (booking.dest_label ?? booking.dropoff_label ?? '—')}
               </Text>
             </View>
+            {isRider && booking.pickup_label && booking.pickup_label !== booking.origin_label ? (
+              <View style={[styles.routeSubLeg, { backgroundColor: c.inputBg }]}>
+                <Text style={[styles.routeSubLegText, { color: c.textSecondary }]}>
+                  📍 Passenger pickup: <Text style={{ fontWeight: '700', color: c.text }}>{booking.pickup_label}</Text>
+                  {'\n'}🏁 Passenger dropoff: <Text style={{ fontWeight: '700', color: c.text }}>{booking.dropoff_label}</Text>
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.infoGrid}>
               {isRider ? (
                 <>
@@ -597,6 +611,8 @@ const styles = StyleSheet.create({
   routeDot: { fontSize: 12, marginTop: 2 },
   routeText: { flex: 1, fontSize: 14, fontWeight: '500', lineHeight: 20 },
   routeLine: { width: 2, height: 8, marginLeft: 5, borderRadius: 1 },
+  routeSubLeg: { borderRadius: 8, padding: 8, marginTop: 4 },
+  routeSubLegText: { fontSize: 12, lineHeight: 18 },
 
   infoGrid: { gap: 6, marginTop: 8 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

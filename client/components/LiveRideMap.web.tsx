@@ -11,19 +11,34 @@ export interface RoutePoint {
 interface Props {
   locations: { userId: string; lat: number; lng: number }[];
   myUserId: string;
+  riderId?: string;
+  isRider?: boolean;
   routeGeoJson?: string | null;
   origin?: RoutePoint | null;
   destination?: RoutePoint | null;
+  pickup?: RoutePoint | null;
+  dropoff?: RoutePoint | null;
   bottomPadding?: number;
 }
 
 export default function LiveRideMap({
   locations,
+  riderId,
   origin,
   destination,
+  pickup,
+  dropoff,
   bottomPadding = 0,
 }: Props) {
   const hasLocation = locations.length > 0;
+  const showDistinctPickup =
+    pickup &&
+    origin &&
+    (Math.abs(pickup.lat - origin.lat) > 0.001 || Math.abs(pickup.lng - origin.lng) > 0.001);
+  const showDistinctDropoff =
+    dropoff &&
+    destination &&
+    (Math.abs(dropoff.lat - destination.lat) > 0.001 || Math.abs(dropoff.lng - destination.lng) > 0.001);
 
   return (
     <View style={[styles.container, { paddingBottom: bottomPadding }]}>
@@ -35,12 +50,22 @@ export default function LiveRideMap({
           <View style={styles.routeBox}>
             {origin ? (
               <Text style={styles.routeItem} numberOfLines={1}>
-                🟢 From: {origin.label ?? `${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`}
+                🟢 Start: {origin.label ?? `${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`}
+              </Text>
+            ) : null}
+            {showDistinctPickup && pickup ? (
+              <Text style={styles.routeItem} numberOfLines={1}>
+                🟡 Pickup: {pickup.label ?? `${pickup.lat.toFixed(4)}, ${pickup.lng.toFixed(4)}`}
+              </Text>
+            ) : null}
+            {showDistinctDropoff && dropoff ? (
+              <Text style={styles.routeItem} numberOfLines={1}>
+                🟣 Dropoff: {dropoff.label ?? `${dropoff.lat.toFixed(4)}, ${dropoff.lng.toFixed(4)}`}
               </Text>
             ) : null}
             {destination ? (
               <Text style={styles.routeItem} numberOfLines={1}>
-                🔴 To: {destination.label ?? `${destination.lat.toFixed(4)}, ${destination.lng.toFixed(4)}`}
+                🔴 Destination: {destination.label ?? `${destination.lat.toFixed(4)}, ${destination.lng.toFixed(4)}`}
               </Text>
             ) : null}
           </View>
@@ -48,7 +73,7 @@ export default function LiveRideMap({
 
         <Text style={styles.sub}>
           {hasLocation
-            ? `🟢 ${locations.length} occupant(s) active on map`
+            ? `🟢 ${locations.length} active on ride (${riderId ? '🚗 Rider' : 'Occupants'})`
             : '⏳ Acquiring GPS position…'}
         </Text>
         <Text style={styles.hint}>Open Android/iOS app for full interactive vector map</Text>
