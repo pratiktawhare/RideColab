@@ -30,7 +30,7 @@ const LANDMARKS = [
   { name: 'Katraj', name_hi: 'कात्रज', name_mr: 'कात्रज', category: 'area', lat: 18.4531, lng: 73.8562 },
   { name: 'Pune University', name_hi: 'पुणे विश्वविद्यालय', name_mr: 'पुणे विद्यापीठ', category: 'education', lat: 18.5593, lng: 73.8143 },
   { name: 'COEP', name_hi: 'सीओईपी', name_mr: 'COEP', category: 'education', lat: 18.5300, lng: 73.8571 },
-  { name: 'Zeal College of Engineering and Research', name_hi: 'जील इंजीनियरिंग और अनुसंधान कॉलेज', name_mr: 'झील अभियांत्रिकी व संशोधन महाविद्यालय', category: 'education', lat: 18.4698, lng: 73.8503 },
+  { name: 'Zeal College of Engineering and Research', name_hi: 'जील इंजीनियरिंग और अनुसंधान कॉलेज', name_mr: 'झील अभियांत्रिकी व संशोधन महाविद्यालय', category: 'education', lat: 18.4489, lng: 73.8263 },
   { name: 'Symbiosis', name_hi: 'सिम्बायोसिस', name_mr: 'सिम्बायोसिस', category: 'education', lat: 18.5116, lng: 73.8158 },
   { name: 'Phoenix Mall Wakad', name_hi: 'फीनिक्स मॉल वाकड', name_mr: 'फिनिक्स मॉल वाकड', category: 'shopping', lat: 18.5991, lng: 73.7644 },
   { name: 'Amanora Mall', name_hi: 'अमनोरा मॉल', name_mr: 'अमनोरा मॉल', category: 'shopping', lat: 18.5051, lng: 73.9299 },
