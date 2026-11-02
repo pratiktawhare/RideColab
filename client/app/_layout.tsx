@@ -112,6 +112,7 @@ export default function RootLayout() {
           <Stack.Screen name="login" options={{ animation: 'fade' }} />
           <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="booking-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="live-ride" options={{ animation: 'slide_from_bottom', gestureEnabled: false }} />
         </Stack>
       </QueryClientProvider>
     </GestureHandlerRootView>

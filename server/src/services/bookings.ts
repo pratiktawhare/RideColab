@@ -4,6 +4,7 @@
 import { query, withTransaction } from '~/db/pool';
 import { logger } from '~/utils/logger';
 import { sendPushToUser } from '~/services/notifications';
+import { clearTripLocations } from '~/services/live';
 
 // ── Types ─────────────────────────────────────────────────────
 export type BookingStatus = 'pending' | 'accepted' | 'started' | 'completed' | 'declined' | 'cancelled';
@@ -471,6 +472,11 @@ export async function completeRide(bookingId: string, riderId: string): Promise<
        SELECT rider_id FROM trips WHERE id = $1
      )`,
     [trip_id],
+  );
+
+  // DPDP compliance: clear live location data after trip completion
+  clearTripLocations(trip_id).catch((err) =>
+    logger.error({ err, trip_id }, 'Failed to clear live locations after ride complete'),
   );
 
   sendPushToUser(

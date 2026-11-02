@@ -17,7 +17,7 @@
 | 6 | Fare Engine | ✅ Complete | `abdb074` | User | 2026-10-28 |
 | 7 | Matching Engine | ✅ Complete | `phase-7` | Pending | 2026-10-29 |
 | 8 | Booking Flow | ✅ Complete | `phase-8` | Pending | 2026-11-02 |
-| 9 | Live Ride and Safety | ⏳ Not started | — | — | — |
+| 9 | Live Ride and Safety | ✅ Complete | `phase-9` | Pending | 2026-11-03 |
 | 10 | Payments, Ratings and Trust | ⏳ Not started | — | — | — |
 | 11 | Communities and Admin Panel | ⏳ Not started | — | — | — |
 | 12 | Creative Features Pack | ⏳ Not started | — | — | — |
@@ -476,7 +476,91 @@ All 7 suites: 115 passed, 115 total
 ---
 
 ### Phase 9 Report
-**Status**: ⏳ Not started
+**Status**: ✅ Complete — committed `phase-9` — 2026-11-03
+
+**What was built:**
+- **Database & Migrations** (`004_phase9_live_safety.sql`):
+  - Added `share_token` (TEXT UNIQUE) to `trips`
+  - Added `helmet_checked_at` and `safe_arrival_at` to `bookings`
+  - Created `ride_events` audit table for safety events (`sos`, `helmet_check`, `safe_arrival`, `deviation_alert`, `long_stop`)
+  - Added index `idx_live_locations_trip` on `live_locations(trip_id, recorded_at DESC)`
+- **Server Live Location Service** (`server/src/services/live.ts`):
+  - In-memory / Upstash Redis caching for real-time location points (`updateLocation`, `getLocations`)
+  - DB periodic flush every 30s
+  - DPDP post-trip data deletion (`clearTripLocations`) called upon ride completion
+  - Route deviation detection (`detectDeviation`) using PostGIS `ST_Distance` (>300m off-route)
+  - Long-stop detection (`detectLongStop`) tracking stationary positions >5 minutes
+- **Server Safety Service** (`server/src/services/safety.ts`):
+  - SOS logging (`logSos`) with emergency contact retrieval, admin push alerts, and audit trail
+  - Helmet check logging (`logHelmetCheck`) for bike rides
+  - Safe-arrival check-in logging (`logSafeArrival`)
+  - Night rules helper (`isNightTime`, `checkNightRules`) for 21:00–05:00 IST travel
+- **Socket.io Real-time Infrastructure** (`server/src/index.ts`):
+  - HTTP server with Socket.io integration
+  - `join_trip`, `leave_trip`, `location_update` events with JWT verification
+  - Automatic `deviation_alert` and `long_stop_alert` room broadcasts
+- **Server Routes** (`server/src/routes/live.ts` & `bookings.ts`):
+  - `POST /api/v1/trips/:id/live-share` — generates share token & public URL
+  - `GET /api/v1/live/:trip_id` — occupant-only live location fetch
+  - `POST /api/v1/trips/:id/sos` — trigger SOS with location & return emergency contacts
+  - `POST /api/v1/bookings/:id/helmet-check` — mandatory bike safety confirmation
+  - `POST /api/v1/bookings/:id/safe-arrival` — passenger destination confirmation
+  - `GET /share/:token` — public HTML map page (MapLibre GL JS)
+  - `GET /api/v1/share-live/:trip_id?token=xxx` — public polling endpoint for share page
+- **Client Real-time & Safety Integration**:
+  - `client/services/socket.ts` — Socket.io client wrapper with auto-reconnect, room management, and event handlers
+  - `client/services/api.ts` — `liveApi` with typed endpoints for live share, SOS, helmet check, and safe arrival
+  - `client/components/LiveRideMap.native.tsx` & `.web.tsx` & platform bridge `.tsx` — real-time MapLibre rendering with custom occupant markers and auto-follow
+  - `client/app/live-ride.tsx` — dedicated Live Ride screen with real-time location stream, interactive map, SOS button, helmet check dialog, night rules check-in, and deviation warnings
+  - `client/app/booking-detail.tsx` — added "Open Live Ride Map" navigation when trip is started
+
+**Test Results (`tests/phase9.test.ts`):**
+```
+PASS tests/phase9.test.ts
+  Live Share Token
+    ✓ POST /api/v1/trips/:id/live-share — rider gets a share token
+    ✓ POST /api/v1/trips/:id/live-share — calling again returns same token
+    ✓ POST /api/v1/trips/:id/live-share — passenger cannot generate share token
+  GET /api/v1/live/:trip_id
+    ✓ returns empty array initially (no location updates yet)
+    ✓ returns location after updateLocation called
+    ✓ non-occupant cannot access live locations
+    ✓ unauthenticated request is rejected
+  GET /share/:token — public page
+    ✓ valid token → 200 HTML page
+    ✓ invalid token → 404
+  GET /api/v1/share-live/:trip_id?token=xxx — public poll
+    ✓ valid share token → returns live location data
+    ✓ invalid share token → 404
+    ✓ missing token → 401
+  POST /api/v1/trips/:id/sos
+    ✓ rider can trigger SOS → creates sos_alerts row
+    ✓ passenger can trigger SOS
+    ✓ SOS also logs a ride_events row
+    ✓ outsider cannot trigger SOS on a trip they are not part of
+  POST /api/v1/bookings/:id/helmet-check
+    ✓ rider can log helmet check
+    ✓ passenger can log helmet check
+    ✓ unrelated user cannot log helmet check
+  POST /api/v1/bookings/:id/safe-arrival
+    ✓ passenger can log safe arrival
+    ✓ rider cannot log safe arrival (not their booking as passenger)
+  DPDP compliance — live locations deleted post-trip
+    ✓ clearTripLocations removes from cache
+  Night rules utility
+    ✓ isNightTime() returns a boolean
+  Live location service — unit tests
+    ✓ updateLocation stores and getLocations retrieves
+    ✓ updating location overwrites previous entry for same user
+    ✓ multiple users tracked independently
+
+Test Suites: 8 passed, 8 total
+Tests:       141 passed, 141 total
+```
+
+**TypeScript:**
+- `server`: `tsc --noEmit` → 0 errors
+- `client`: `tsc --noEmit` → 0 errors
 
 ---
 

@@ -323,6 +323,9 @@ export interface Booking {
   vehicle_make: string;
   vehicle_model: string;
   plate_number: string;
+  // Phase 9 safety fields
+  helmet_checked_at?: string | null;
+  safe_arrival_at?: string | null;
 }
 
 export interface ChatMessage {
@@ -392,5 +395,50 @@ export const bookingApi = {
     request<{ registered: boolean }>('/bookings/push-token', {
       method: 'POST',
       body: JSON.stringify({ push_token }),
+    }),
+};
+
+// ─── Live Ride & Safety API (Phase 9) ─────────────────────────
+export interface LiveLocationPoint {
+  userId: string;
+  lat: number;
+  lng: number;
+  bearing?: number;
+  speed?: number;
+  ts: number;
+}
+
+export interface SosResponse {
+  sos_id: string;
+  emergency_contacts: Array<{ name: string; phone: string }>;
+}
+
+export const liveApi = {
+  /** Generate or retrieve share link for a trip (rider only) */
+  shareLink: (tripId: string) =>
+    request<{ share_token: string; share_url: string }>(`/trips/${tripId}/live-share`, {
+      method: 'POST',
+    }),
+
+  /** Get all live locations for a trip (occupants only) */
+  getLocations: (tripId: string) => request<LiveLocationPoint[]>(`/live/${tripId}`),
+
+  /** Trigger SOS — returns sos_id + emergency contacts */
+  triggerSos: (tripId: string, lat?: number, lng?: number) =>
+    request<SosResponse>(`/trips/${tripId}/sos`, {
+      method: 'POST',
+      body: JSON.stringify({ lat, lng }),
+    }),
+
+  /** Log helmet check for a booking */
+  helmetCheck: (bookingId: string) =>
+    request<{ helmet_checked: boolean }>(`/bookings/${bookingId}/helmet-check`, {
+      method: 'POST',
+    }),
+
+  /** Log safe arrival for a booking */
+  safeArrival: (bookingId: string) =>
+    request<{ safe_arrival_logged: boolean }>(`/bookings/${bookingId}/safe-arrival`, {
+      method: 'POST',
     }),
 };

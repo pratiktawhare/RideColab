@@ -16,6 +16,7 @@ import {
   generateRideCodeForBooking,
 } from '~/services/bookings';
 import { registerPushToken } from '~/services/notifications';
+import { logHelmetCheck, logSafeArrival } from '~/services/safety';
 
 const router = Router();
 router.use(authenticate);
@@ -262,6 +263,32 @@ router.post('/:id/messages', async (req: Request, res: Response, next: NextFunct
         is_mine: true,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Phase 9: Helmet check ─────────────────────────────────────
+// POST /bookings/:id/helmet-check  (JWT, occupant)
+router.post('/:id/helmet-check', async (req, res, next) => {
+  try {
+    const userId = req.user!.sub;
+    const bookingId = req.params['id']!;
+    await logHelmetCheck(bookingId, userId);
+    res.json({ success: true, data: { helmet_checked: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Phase 9: Safe arrival ─────────────────────────────────────
+// POST /bookings/:id/safe-arrival  (JWT, passenger)
+router.post('/:id/safe-arrival', async (req, res, next) => {
+  try {
+    const userId = req.user!.sub;
+    const bookingId = req.params['id']!;
+    await logSafeArrival(bookingId, userId);
+    res.json({ success: true, data: { safe_arrival_logged: true } });
   } catch (err) {
     next(err);
   }

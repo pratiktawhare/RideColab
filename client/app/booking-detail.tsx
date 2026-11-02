@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useThemeStore } from '@/store/themeStore';
 import { useAuthStore } from '@/store/authStore';
-import { bookingApi, Booking, ChatMessage } from '@/services/api';
+import { bookingApi, liveApi, Booking, ChatMessage } from '@/services/api';
 
 // ── Status colours ─────────────────────────────────────────────
 const STATUS_META: Record<string, { color: string; label: string; emoji: string }> = {
@@ -390,6 +390,16 @@ export default function BookingDetailScreen() {
                 </TouchableOpacity>
               )}
             </View>
+          )}
+
+          {/* ── Open Live Ride (both rider and passenger when started) ── */}
+          {booking.status === 'started' && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#3B82F6', marginTop: 0 }]}
+              onPress={() => router.push(`/live-ride?bookingId=${booking.id}`)}
+            >
+              <Text style={styles.actionBtnText}>📍 Open Live Ride Map</Text>
+            </TouchableOpacity>
           )}
 
           {/* ── Passenger: Show Ride Code ── */}

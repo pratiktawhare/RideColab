@@ -10,6 +10,7 @@ export interface AuthUser {
   name: string;
   role: 'user' | 'admin';
   mode: 'rider' | 'passenger';
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say';
   trust_score?: number;
   consent_given_at?: string | null;
 }
