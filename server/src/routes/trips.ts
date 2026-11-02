@@ -4,6 +4,7 @@ import { authenticate } from '~/middleware/authenticate';
 import { query, withTransaction } from '~/db/pool';
 import { getRoute } from '~/services/routing';
 import { calculateFareCap, checkWeeklyLimit, incrementWeeklyTrips } from '~/services/trips';
+import { checkPostingSuspended } from '~/services/bookings';
 import { logger } from '~/utils/logger';
 
 const router = Router();
@@ -86,6 +87,20 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
     const riderId = req.user!.sub;
     const data = parsed.data;
+
+    // 0. Check if rider is suspended due to cancellation streak
+    const suspended = await checkPostingSuspended(riderId);
+    if (suspended) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'POSTING_SUSPENDED',
+          message: 'Your trip posting has been suspended due to excessive cancellations. Contact support.',
+          details: null,
+        },
+      });
+      return;
+    }
 
     // 1. Check weekly limit (also resets counter if cron missed)
     try {

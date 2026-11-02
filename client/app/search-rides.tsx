@@ -4,7 +4,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, Switch, ActivityIndicator,
+  TouchableOpacity, Switch, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -12,7 +12,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useTripsStore } from '@/store/tripsStore';
 import { PlaceSearch } from '@/components/PlaceSearch';
 import { AppButton } from '@/components/AppButton';
-import { searchApi, GeoResult, MatchResult } from '@/services/api';
+import { searchApi, bookingApi, GeoResult, MatchResult } from '@/services/api';
 
 // ── Match result card ─────────────────────────────────────────────────────────
 function RideMatchCard({
@@ -174,6 +174,43 @@ export default function SearchRidesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleSelectMatch = (match: MatchResult) => {
+    const estShare = match.fare_set != null ? Math.ceil(match.fare_set / (match.seats_available + 1)) * seats : 0;
+    Alert.alert(
+      'Request Booking',
+      `Ride with ${match.rider_name} (${match.vehicle_make} ${match.vehicle_model})\n` +
+      `Seats: ${seats}\n` +
+      `Est. Fuel Share: ₹${estShare}\n` +
+      `Pickup: ${pickup?.label ?? match.origin_label}\n` +
+      `Dropoff: ${dropoff?.label ?? match.destination_label}\n\n` +
+      `Send request to rider?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Request',
+          onPress: async () => {
+            try {
+              const booking = await bookingApi.create({
+                trip_id: match.trip_id,
+                seats_booked: seats,
+                pickup_label: pickup?.label ?? match.origin_label,
+                pickup_lat: pickup?.lat,
+                pickup_lng: pickup?.lng,
+                dropoff_label: dropoff?.label ?? match.destination_label,
+                dropoff_lat: dropoff?.lat,
+                dropoff_lng: dropoff?.lng,
+              });
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              router.push({ pathname: '/booking-detail', params: { id: booking.id } } as any);
+            } catch (err) {
+              Alert.alert('Booking Error', (err as Error).message ?? 'Could not create booking');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
       {/* Header */}
@@ -286,10 +323,7 @@ export default function SearchRidesScreen() {
                 key={match.trip_id}
                 match={match}
                 c={c}
-                onPress={() => {
-                  // Phase 8: navigate to booking screen
-                  // router.push(`/book/${match.trip_id}`);
-                }}
+                onPress={() => handleSelectMatch(match)}
               />
             ))}
           </>

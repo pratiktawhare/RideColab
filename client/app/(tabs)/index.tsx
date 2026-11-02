@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Home screen — rider/passenger toggle, live map, place search
 // ─────────────────────────────────────────────────────────────
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, StatusBar,
@@ -32,12 +32,24 @@ function RideMap({
   cameraRef,
   position,
   onMapLoaded,
+  onUnmount,
 }: {
   cameraRef: React.MutableRefObject<CameraRef | null>;
   position: ReturnType<typeof useCurrentPosition> | undefined;
   onMapLoaded?: () => void;
+  onUnmount?: () => void;
 }) {
   const mapStyle = env.MAP_TILE_URL || 'https://tiles.openfreemap.org/styles/liberty';
+
+  // Signal parent that this native view is gone so camera calls are skipped
+  useEffect(() => {
+    return () => {
+      cameraRef.current = null;
+      onUnmount?.();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <MapLibreMap
       style={StyleSheet.absoluteFill}
@@ -108,16 +120,18 @@ export default function HomeScreen() {
       .catch(() => setLocationGranted(false));
   }, []);
 
-  const safeFlyTo = (ref: React.MutableRefObject<CameraRef | null>, center: [number, number]) => {
+  const safeFlyTo = useCallback((ref: React.MutableRefObject<CameraRef | null>, center: [number, number]) => {
+    if (!ref.current) return; // native view already unmounted — skip
     try {
-      const res = ref.current?.flyTo({ center, duration: 1500 });
-      if (res && typeof (res as Promise<unknown>).catch === 'function') {
-        (res as Promise<unknown>).catch(() => {});
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res: any = ref.current?.flyTo({ center, duration: 1500 });
+      if (res && typeof res.catch === 'function') {
+        res.catch(() => {});
       }
     } catch {
       // safe fallback if native view is detached
     }
-  };
+  }, []);
 
   // Fly to GPS once it arrives AND map native view is ready
   useEffect(() => {
@@ -339,12 +353,16 @@ export default function HomeScreen() {
         <View style={[styles.fullMapRoot, { paddingTop: insets.top }]}>
           <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
           {/* Map fills entire root */}
-          <RideMap cameraRef={fullCameraRef} position={activePos} onMapLoaded={() => setFullMapLoaded(true)} />
+          <RideMap cameraRef={fullCameraRef} position={activePos} onMapLoaded={() => setFullMapLoaded(true)} onUnmount={() => setFullMapLoaded(false)} />
 
           {/* ── Google-Maps-style top bar ── */}
           <View style={styles.fullTopBar} pointerEvents="box-none">
             {/* Close button — top-left */}
-            <TouchableOpacity style={styles.fullCloseBtn} onPress={() => { setMapExpanded(false); setFullMapLoaded(false); }} accessibilityLabel="Close fullscreen map">
+            <TouchableOpacity style={styles.fullCloseBtn} onPress={() => {
+              fullCameraRef.current = null; // detach before unmount to silence reactTag errors
+              setMapExpanded(false);
+              setFullMapLoaded(false);
+            }} accessibilityLabel="Close fullscreen map">
               <Text style={styles.fullCloseBtnText}>✕</Text>
             </TouchableOpacity>
 

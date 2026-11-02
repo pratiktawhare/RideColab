@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useThemeStore, hydrateTheme } from '@/store/themeStore';
 import { ColdStartScreen } from '@/components/ColdStartScreen';
 import { healthApi } from '@/services/api';
+import { registerForPushNotifications } from '@/services/notifications';
 import '@/i18n'; // initialise i18n
 
 // Ignore known MapLibre Native tag resolver asynchronous race condition on unmount
@@ -44,6 +45,10 @@ function AuthGate() {
       router.replace('/login' as any);
     } else if (user && inAuth) {
       router.replace('/(tabs)');
+    }
+
+    if (user) {
+      registerForPushNotifications().catch(() => {});
     }
   }, [user, isHydrated, segments]);
 
@@ -102,6 +107,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="login" options={{ animation: 'fade' }} />
           <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="booking-detail" options={{ animation: 'slide_from_right' }} />
         </Stack>
       </QueryClientProvider>
     </GestureHandlerRootView>

@@ -288,3 +288,107 @@ export const searchApi = {
       body: JSON.stringify(params),
     }),
 };
+
+// ─────────────────────────────────────────────────────────────
+// Booking types
+// ─────────────────────────────────────────────────────────────
+export interface Booking {
+  id: string;
+  trip_id: string;
+  passenger_id: string;
+  rider_id: string;
+  status: 'pending' | 'accepted' | 'started' | 'completed' | 'declined' | 'cancelled';
+  seats_booked: number;
+  pickup_label: string | null;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+  dropoff_label: string | null;
+  dropoff_lat: number | null;
+  dropoff_lng: number | null;
+  fare_share: number | null;
+  ride_code: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  // joined trip fields
+  origin_label: string;
+  dest_label: string;
+  depart_at: string;
+  rider_name: string;
+  rider_trust: number;
+  vehicle_make: string;
+  vehicle_model: string;
+  plate_number: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  body: string;
+  created_at: string;
+  is_mine: boolean;
+}
+
+export interface CreateBookingParams {
+  trip_id: string;
+  seats_booked?: number;
+  pickup_label?: string;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_label?: string;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Booking API
+// ─────────────────────────────────────────────────────────────
+export const bookingApi = {
+  create: (params: CreateBookingParams) =>
+    request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(params) }),
+
+  mine: () => request<Booking[]>('/bookings/mine'),
+
+  getById: (id: string) => request<Booking>(`/bookings/${id}`),
+
+  accept: (id: string) =>
+    request<Booking>(`/bookings/${id}/accept`, { method: 'POST' }),
+
+  decline: (id: string) =>
+    request<{ declined: boolean }>(`/bookings/${id}/decline`, { method: 'POST' }),
+
+  cancel: (id: string, reason?: string) =>
+    request<{ cancelled: boolean }>(`/bookings/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  generateRideCode: (id: string) =>
+    request<{ ride_code: string }>(`/bookings/${id}/ride-code`, { method: 'POST' }),
+
+  startRide: (id: string, ride_code: string) =>
+    request<Booking>(`/bookings/${id}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ ride_code }),
+    }),
+
+  complete: (id: string) =>
+    request<Booking>(`/bookings/${id}/complete`, { method: 'POST' }),
+
+  getMessages: (id: string) => request<ChatMessage[]>(`/bookings/${id}/messages`),
+
+  sendMessage: (id: string, body: string) =>
+    request<ChatMessage>(`/bookings/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    }),
+
+  registerPushToken: (push_token: string) =>
+    request<{ registered: boolean }>('/bookings/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ push_token }),
+    }),
+};

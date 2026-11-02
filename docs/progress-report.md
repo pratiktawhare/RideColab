@@ -16,7 +16,7 @@
 | 5 | Maps, Geocoding, Routing and Trip Posting | ✅ Complete | `0ef6bdf` | User | 2026-10-26 |
 | 6 | Fare Engine | ✅ Complete | `abdb074` | User | 2026-10-28 |
 | 7 | Matching Engine | ✅ Complete | `phase-7` | Pending | 2026-10-29 |
-| 8 | Booking Flow | ⏳ Not started | — | — | — |
+| 8 | Booking Flow | ✅ Complete | `phase-8` | Pending | 2026-11-02 |
 | 9 | Live Ride and Safety | ⏳ Not started | — | — | — |
 | 10 | Payments, Ratings and Trust | ⏳ Not started | — | — | — |
 | 11 | Communities and Admin Panel | ⏳ Not started | — | — | — |
@@ -411,7 +411,67 @@ All 6 suites: 96 passed, 96 total
 ---
 
 ### Phase 8 Report
-**Status**: ⏳ Not started
+**Status**: ✅ Complete — committed `phase-8` — 2026-11-02
+
+**What was built:**
+- **Database Migration (`003_phase8_bookings.sql`)**:
+  - `bookings` table extended with `ride_code`, `seats_booked`, `started_at`, `completed_at`, `cancelled_at`, `cancel_reason`, `cancelled_by`
+  - Status check constraint: `pending`, `accepted`, `started`, `completed`, `declined`, `cancelled`
+  - `cancellation_events` table for tracking 7-day rolling cancellation streak
+  - `can_post_trips` boolean flag on `users` table
+  - Push token upsert support on `notifications` (`UNIQUE(user_id)`)
+- **Backend Services & State Machine (`server/src/services/`)**:
+  - `bookings.ts`: Full state machine (request -> accept -> start with ride code -> complete / decline / cancel with seat restoration)
+  - `chat.ts`: AES-256-GCM authenticated encryption/decryption with booking-scoped derived keys (`HMAC-SHA256(SERVER_CHAT_SECRET, booking_id)`)
+  - `notifications.ts`: Expo Push Notifications integration with token registration and silent fallback
+  - `trips.ts`: Enforced `can_post_trips` suspension check (`POST /trips` returns 403 `POSTING_SUSPENDED` if user exceeded 5 cancellations in 7 days)
+  - `bookings.ts` routes: 10 endpoints mounted at `/api/v1/bookings`
+- **Mobile Client UI (`client/`)**:
+  - `client/services/api.ts`: Typed `bookingApi` client + interfaces (`Booking`, `ChatMessage`, `CreateBookingParams`)
+  - `client/services/notifications.ts`: Native Expo push token registration & foreground channel handler
+  - `client/app/(tabs)/activity.tsx`: Full real Activity screen displaying active and past bookings with color-coded status pills, pull-to-refresh, empty states
+  - `client/app/booking-detail.tsx`: Comprehensive booking detail screen:
+    - Route details, rider profile, trust score, vehicle info
+    - Zero-commission fuel cost share calculation & direct `upi://pay` deep link
+    - Rider actions: Accept / Decline / Generate Ride Code / Verify code to Start / Complete
+    - Passenger actions: Display 6-char ride code to rider / Cancel / UPI pay
+    - In-app end-to-end encrypted trip chat
+  - `client/app/search-rides.tsx`: Wired ride match selection to prompt booking request and redirect to `booking-detail`
+  - `client/app/_layout.tsx`: Auto-registers push token on login and registered `booking-detail` screen route
+
+**Test results:**
+```
+PASS tests/phase8.test.ts (40.364 s) — 19 tests
+  Phase 8 — Booking Flow
+    POST /api/v1/bookings (Create Booking)
+      ✓ rejects without auth token (401)
+      ✓ rejects rider booking their own trip (400)
+      ✓ rejects booking more seats than available (409)
+      ✓ successfully creates booking, decrements seats and computes fare share
+      ✓ rejects duplicate pending booking for same trip (409)
+    GET /api/v1/bookings/mine & /:id
+      ✓ returns bookings for the passenger
+      ✓ returns booking detail by id
+    Booking Lifecycle: Accept -> Code -> Start -> Complete
+      ✓ rider accepts booking
+      ✓ generates 6-character ride verification code
+      ✓ rejects start with incorrect code (400)
+      ✓ starts ride with correct ride code
+      ✓ completes the ride
+    Decline & Cancellation (Seat Restoration)
+      ✓ declining a booking restores seats to the trip
+      ✓ cancelling a booking restores seats to the trip
+    Chat Encryption (AES-256-GCM)
+      ✓ sends a chat message and returns plaintext in API response
+      ✓ stores ciphertext in database — body is NOT human-readable plaintext
+      ✓ rider reads and decrypts message correctly via GET /messages
+    Cancellation Streak & Suspension Enforcement
+      ✓ suspends trip posting after 5 cancellations within 7 days
+    POST /api/v1/bookings/push-token
+      ✓ registers Expo push token
+
+All 7 suites: 115 passed, 115 total
+```
 
 ---
 
