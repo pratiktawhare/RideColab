@@ -107,30 +107,73 @@ export async function clearTripLocations(tripId: string): Promise<void> {
       await cache.del(indexKey(tripId));
     }
 
+    clearDeviationTracker(tripId);
+
     logger.info({ tripId }, 'Cleared live locations (DPDP compliance)');
   } catch (err) {
     logger.error({ err, tripId }, 'Failed to clear live locations');
   }
 }
 
-// ── Detect route deviation (distance from trip's stored route) ─
-// Returns distance in metres from the route linestring
+// ── Detect route deviation (distance in metres from trip's stored route) ─
+// Returns geodesic distance in metres from the route linestring
 export async function detectDeviation(tripId: string, lat: number, lng: number): Promise<number> {
   try {
     const res = await query<{ deviation_m: number }>(
       `SELECT ST_Distance(
-         route::geometry,
-         ST_SetSRID(ST_MakePoint($2, $3), 4326)::geometry
-       ) * 111320 AS deviation_m
+         route,
+         ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography
+       ) AS deviation_m
        FROM trips
        WHERE id = $1 AND route IS NOT NULL`,
       [tripId, lng, lat],
     );
-    if (res.rows.length === 0) return 0;
-    return Number(res.rows[0]!.deviation_m);
+    if (res.rows.length === 0 || res.rows[0]?.deviation_m == null) return 0;
+    return Number(res.rows[0].deviation_m);
   } catch {
     return 0;
   }
+}
+
+// ── Track continuous route deviation for > 120s ──────────────
+// Spec: >300m off route for >120s → deviation_alert Socket.io event to all occupants
+interface DeviationState {
+  firstDeviatedAt: number;
+  lastAlertedAt?: number;
+}
+const deviationTimers = new Map<string, DeviationState>();
+
+export function shouldAlertDeviation(tripId: string, deviationM: number): boolean {
+  if (deviationM <= 300) {
+    // Back on route — clear tracking
+    deviationTimers.delete(tripId);
+    return false;
+  }
+
+  const now = Date.now();
+  const state = deviationTimers.get(tripId);
+
+  if (!state) {
+    // First ping detected off-route: record timestamp, do not alert yet
+    deviationTimers.set(tripId, { firstDeviatedAt: now });
+    return false;
+  }
+
+  // Must be off-route continuously for > 120 seconds (120,000 ms)
+  const durationMs = now - state.firstDeviatedAt;
+  if (durationMs >= 120_000) {
+    // Cooldown alert: once per 60 seconds
+    if (!state.lastAlertedAt || now - state.lastAlertedAt >= 60_000) {
+      state.lastAlertedAt = now;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function clearDeviationTracker(tripId: string): void {
+  deviationTimers.delete(tripId);
 }
 
 // ── Detect long stop (same position for > 5 min) ──────────────

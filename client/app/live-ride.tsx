@@ -82,6 +82,17 @@ export default function LiveRideScreen() {
         setLoading(false);
         tripIdRef.current = b.trip_id;
 
+        // Fetch existing live locations immediately so occupants see positions right away
+        liveApi
+          .getLocations(b.trip_id)
+          .then((existingLocs) => {
+            if (!isMountedRef.current || !existingLocs) return;
+            if (existingLocs.length > 0) {
+              setLocations(existingLocs);
+            }
+          })
+          .catch(() => {});
+
         // Show helmet check modal if not yet checked
         if (!b.helmet_checked_at && b.status === 'started') {
           setHelmetModalVisible(true);
@@ -131,9 +142,48 @@ export default function LiveRideScreen() {
         if (!isMountedRef.current) return;
         setSocketReady(true);
 
-        // Rider emits location every 5s
+        // Rider emits location every 5s and updates local state immediately
         if (isRider) {
-          startLocationEmit(tripId, getMyLocation);
+          startLocationEmit(tripId, async () => {
+            const loc = await getMyLocation();
+            if (loc && isMountedRef.current) {
+              setLocations((prev) => {
+                const filtered = prev.filter((l) => l.userId !== user.id);
+                return [
+                  ...filtered,
+                  {
+                    userId: user.id,
+                    lat: loc.lat,
+                    lng: loc.lng,
+                    bearing: loc.bearing,
+                    speed: loc.speed,
+                    ts: Date.now(),
+                  },
+                ];
+              });
+            }
+            return loc;
+          });
+        } else {
+          // Passenger: get own position once for map context
+          getMyLocation().then((loc) => {
+            if (loc && isMountedRef.current) {
+              setLocations((prev) => {
+                const filtered = prev.filter((l) => l.userId !== user.id);
+                return [
+                  ...filtered,
+                  {
+                    userId: user.id,
+                    lat: loc.lat,
+                    lng: loc.lng,
+                    bearing: loc.bearing,
+                    speed: loc.speed,
+                    ts: Date.now(),
+                  },
+                ];
+              });
+            }
+          });
         }
       } catch (err) {
         console.warn('[LiveRide] join_trip failed:', err);
@@ -328,6 +378,21 @@ export default function LiveRideScreen() {
         <LiveRideMap
           locations={locations}
           myUserId={user?.id ?? ''}
+          routeGeoJson={booking.route_geojson}
+          origin={
+            booking.origin_lat != null && booking.origin_lng != null
+              ? { lat: Number(booking.origin_lat), lng: Number(booking.origin_lng), label: booking.origin_label }
+              : booking.pickup_lat != null && booking.pickup_lng != null
+              ? { lat: Number(booking.pickup_lat), lng: Number(booking.pickup_lng), label: booking.pickup_label ?? undefined }
+              : null
+          }
+          destination={
+            booking.dest_lat != null && booking.dest_lng != null
+              ? { lat: Number(booking.dest_lat), lng: Number(booking.dest_lng), label: booking.dest_label }
+              : booking.dropoff_lat != null && booking.dropoff_lng != null
+              ? { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng), label: booking.dropoff_label ?? undefined }
+              : null
+          }
           bottomPadding={0}
         />
         {locations.length === 0 ? (

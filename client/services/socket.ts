@@ -94,7 +94,7 @@ export function startLocationEmit(
 ): void {
   stopLocationEmit(); // clear any previous interval
 
-  locationInterval = setInterval(async () => {
+  const emitNow = async () => {
     if (!socket?.connected) return;
     try {
       const loc = await getLocation();
@@ -109,7 +109,13 @@ export function startLocationEmit(
     } catch (e) {
       console.warn('[Socket] Location emit error:', e);
     }
-  }, 5000);
+  };
+
+  // Emit immediately on start
+  void emitNow();
+
+  // Then emit every 5s
+  locationInterval = setInterval(emitNow, 5000);
 }
 
 // ── Stop emitting location ────────────────────────────────────

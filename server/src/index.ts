@@ -25,9 +25,12 @@ import searchRouter from '~/routes/search';
 import bookingsRouter from '~/routes/bookings';
 import liveRouter, { sharePageHandler } from '~/routes/live';
 import { resetWeeklyCounters, materialiseRecurringTrips } from '~/services/trips';
+import { query } from '~/db/pool';
 import {
   updateLocation,
   detectDeviation,
+  shouldAlertDeviation,
+  clearDeviationTracker,
   detectLongStop,
   clearLongStopTracker,
   flushLocationsToDB,
@@ -213,16 +216,25 @@ io.on('connection', (socket) => {
           ts: Date.now(),
         });
 
-        // ── Deviation check ──────────────────────────────────
-        const deviationM = await detectDeviation(tripId, lat, lng);
-        if (deviationM > 300) {
-          io.to(`trip:${tripId}`).emit('deviation_alert', {
-            userId,
-            deviationM,
-            lat,
-            lng,
-            ts: Date.now(),
-          });
+        // ── Deviation check (>300m off-route continuously for >120s) ──
+        // Only the rider's phone drives the trip route; passenger phone is not navigating
+        const tripRes = await query<{ rider_id: string }>(
+          `SELECT rider_id FROM trips WHERE id = $1`,
+          [tripId],
+        );
+        const isTripRider = tripRes.rows[0]?.rider_id === userId;
+
+        if (isTripRider) {
+          const deviationM = await detectDeviation(tripId, lat, lng);
+          if (shouldAlertDeviation(tripId, deviationM)) {
+            io.to(`trip:${tripId}`).emit('deviation_alert', {
+              userId,
+              deviationM,
+              lat,
+              lng,
+              ts: Date.now(),
+            });
+          }
         }
 
         // ── Long stop check ──────────────────────────────────
@@ -239,7 +251,10 @@ io.on('connection', (socket) => {
   socket.on('leave_trip', ({ tripId }: { tripId: string }) => {
     const userId = socketUserMap.get(socket.id);
     void socket.leave(`trip:${tripId}`);
-    if (userId) clearLongStopTracker(tripId, userId);
+    if (userId) {
+      clearLongStopTracker(tripId, userId);
+      clearDeviationTracker(tripId);
+    }
     logger.info({ socketId: socket.id, tripId }, 'Socket left trip room');
   });
 

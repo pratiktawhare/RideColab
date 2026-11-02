@@ -315,6 +315,11 @@ export interface Booking {
   // joined trip fields
   origin_label: string;
   dest_label: string;
+  origin_lat?: number;
+  origin_lng?: number;
+  dest_lat?: number;
+  dest_lng?: number;
+  route_geojson?: string | null;
   depart_at: string;
   rider_name: string;
   rider_trust: number;
