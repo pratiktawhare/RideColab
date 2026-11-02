@@ -335,11 +335,11 @@ export default function PostTripScreen() {
                 placeholderTextColor={c.textMuted}
               />
             </View>
-            {fareSet && !isNaN(parseFloat(fareSet)) && (
+            {fareSet && !isNaN(parseFloat(fareSet)) ? (
               <Text style={[styles.hint, { color: c.textMuted }]}>
                 Each passenger pays ≈ ₹{(parseFloat(fareSet) / ((parseInt(seats, 10) || 1) + 1)).toFixed(0)}
               </Text>
-            )}
+            ) : null}
           </View>
 
           {/* Vehicle */}

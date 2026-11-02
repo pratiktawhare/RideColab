@@ -20,10 +20,10 @@ export function EmptyState({ emoji = '🔍', title, subtitle, actionLabel, onAct
     <View style={styles.container}>
       <Text style={styles.emoji}>{emoji}</Text>
       <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
-      {subtitle && <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>{subtitle}</Text>}
-      {actionLabel && onAction && (
+      {subtitle ? <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>{subtitle}</Text> : null}
+      {actionLabel && onAction ? (
         <AppButton label={actionLabel} onPress={onAction} variant="ghost" fullWidth={false} style={styles.btn} />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -39,7 +39,7 @@ export function ErrorState({ message = 'Something went wrong', onRetry }: ErrorS
     <View style={styles.container}>
       <Text style={styles.emoji}>⚠️</Text>
       <Text style={[styles.title, { color: theme.colors.text }]}>{message}</Text>
-      {onRetry && <AppButton label="Retry" onPress={onRetry} variant="secondary" fullWidth={false} style={styles.btn} />}
+      {onRetry ? <AppButton label="Retry" onPress={onRetry} variant="secondary" fullWidth={false} style={styles.btn} /> : null}
     </View>
   );
 }

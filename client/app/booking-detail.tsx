@@ -228,11 +228,11 @@ export default function BookingDetailScreen() {
             <Text style={{ fontSize: 28 }}>{sm.emoji}</Text>
             <View style={{ flex: 1 }}>
               <Text style={[styles.statusLabel, { color: sm.color }]}>{sm.label}</Text>
-              {booking.cancelled_at && (
+              {booking.cancelled_at ? (
                 <Text style={[styles.statusSub, { color: c.textSecondary }]}>
                   {booking.cancel_reason ? `Reason: ${booking.cancel_reason}` : 'No reason given'}
                 </Text>
-              )}
+              ) : null}
             </View>
           </View>
 

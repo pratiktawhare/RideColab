@@ -91,21 +91,21 @@ function TripCard({
         <Text style={[styles.metaChip, { color: c.textSecondary }]}>
           💺 {trip.seats_available}/{trip.seats_total} seats
         </Text>
-        {distKm && (
+        {distKm ? (
           <Text style={[styles.metaChip, { color: c.textSecondary }]}>
             🛣️ {distKm} km
           </Text>
-        )}
+        ) : null}
         <Text style={[styles.metaChip, { color: c.accent, fontWeight: '700' }]}>
           ₹{farePerPax}/pax
         </Text>
       </View>
 
-      {trip.notes && (
+      {trip.notes ? (
         <Text style={[styles.notes, { color: c.textSecondary }]} numberOfLines={2}>
           📝 {trip.notes}
         </Text>
-      )}
+      ) : null}
 
       {canCancel && (
         <TouchableOpacity

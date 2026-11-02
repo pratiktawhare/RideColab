@@ -118,20 +118,20 @@ export function MatchCard({ data, onPress }: MatchCardProps) {
         {data.detourKm !== undefined && (
           <Chip label={`↪ ${data.detourKm.toFixed(1)} km detour`} color={c.textSecondary} bg={c.inputBg} border={c.border} />
         )}
-        {data.communityName && (
+        {data.communityName ? (
           <Chip label={`🏫 ${data.communityName}`} color={c.accent} bg={c.accentMuted} border="transparent" />
-        )}
+        ) : null}
       </View>
 
       {/* "Why this match" chips */}
-      {data.whyChips && data.whyChips.length > 0 && (
+      {data.whyChips && data.whyChips.length > 0 ? (
         <View style={styles.whyRow}>
           <Text style={[styles.whyLabel, { color: c.textMuted }]}>Why this match: </Text>
           {data.whyChips.map((chip) => (
             <Text key={chip} style={[styles.whyChip, { color: c.accent }]}>{chip}</Text>
           ))}
         </View>
-      )}
+      ) : null}
     </TouchableOpacity>
   );
 }
