@@ -49,6 +49,7 @@ router.post(
         community_id:   p.community_id,
         vehicle_type:   p.vehicle_type,
         passenger_gender: (req.user as { gender?: string })?.gender ?? null,
+        passenger_id:   req.user!.sub,
       });
 
       res.json({ success: true, data: matches, meta: { total: matches.length } });

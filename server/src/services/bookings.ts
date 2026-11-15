@@ -39,6 +39,7 @@ export interface BookingRow {
   route_geojson?: string | null;
   depart_at: string;
   rider_name: string;
+  rider_upi?: string | null;
   rider_trust: number;
   passenger_name?: string;
   passenger_trust?: number;
@@ -191,6 +192,7 @@ export async function getBookingById(
             t.origin_lat, t.origin_lng, t.dest_lat, t.dest_lng,
             ST_AsGeoJSON(t.route) AS route_geojson,
             u.name AS rider_name,
+            u.upi_id AS rider_upi,
             COALESCE(ts.score, 50) AS rider_trust,
             p.name AS passenger_name,
             COALESCE(pts.score, 50) AS passenger_trust,
@@ -219,6 +221,7 @@ export async function getMyBookings(userId: string): Promise<BookingRow[]> {
             t.origin_lat, t.origin_lng, t.dest_lat, t.dest_lng,
             ST_AsGeoJSON(t.route) AS route_geojson,
             u.name AS rider_name,
+            u.upi_id AS rider_upi,
             COALESCE(ts.score, 50) AS rider_trust,
             p.name AS passenger_name,
             COALESCE(pts.score, 50) AS passenger_trust,

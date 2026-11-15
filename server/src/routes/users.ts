@@ -287,4 +287,33 @@ router.post('/me/declarations', authenticate, async (req: Request, res: Response
   }
 });
 
+// ─────────────────────────────────────────────────────────────
+// GET /users/:id — public profile (no PII exposed)
+// ─────────────────────────────────────────────────────────────
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await query(
+      `SELECT
+         u.id, u.name,
+         COALESCE(ts.score, 10)          AS trust_score,
+         COALESCE(ts.avg_rating, 0)      AS avg_rating,
+         COALESCE(ts.total_ratings, 0)   AS total_ratings,
+         COALESCE(ts.total_trips, 0)     AS total_trips,
+         COALESCE(ts.community_member, FALSE) AS community_member,
+         u.created_at
+       FROM users u
+       LEFT JOIN trust_scores ts ON ts.user_id = u.id
+       WHERE u.id = $1 AND u.is_active = TRUE AND u.is_anonymised = FALSE`,
+      [req.params.id],
+    );
+    if (!rows[0]) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found', details: null } });
+      return;
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

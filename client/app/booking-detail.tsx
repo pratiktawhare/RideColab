@@ -167,11 +167,34 @@ export default function BookingDetailScreen() {
   };
 
   const doUpiPay = () => {
-    if (!booking?.fare_share || !booking.rider_id) return;
+    if (!booking?.fare_share) return;
+    const upiId = booking.rider_upi?.trim();
+    if (!upiId) {
+      Alert.alert(
+        'Rider UPI ID Not Set',
+        `The rider has not added a UPI ID yet.\n\nPlease pay ₹${Number(booking.fare_share).toFixed(0)} in cash or scan their UPI QR code directly.`,
+        [
+          {
+            text: 'Simulate Demo Payment',
+            onPress: () =>
+              Alert.alert(
+                'Demo Payment Successful ✅',
+                `Simulated payment of ₹${Number(booking.fare_share).toFixed(0)} sent to ${booking.rider_name ?? 'Rider'}.`,
+              ),
+          },
+          { text: 'OK', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
     // UPI deep link — no money handled server-side
-    const upiUrl = `upi://pay?pa=&pn=${encodeURIComponent(booking.rider_name ?? 'Rider')}&am=${Number(booking.fare_share).toFixed(2)}&cu=INR&tn=${encodeURIComponent('RideColab fare share')}`;
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(booking.rider_name ?? 'Rider')}&am=${Number(booking.fare_share).toFixed(2)}&cu=INR&tn=${encodeURIComponent('RideColab fuel cost share')}`;
     Linking.openURL(upiUrl).catch(() =>
-      Alert.alert('UPI not available', 'Open your UPI app manually and pay ₹' + Number(booking.fare_share).toFixed(0)),
+      Alert.alert(
+        'UPI App Not Found',
+        `Could not open UPI app.\n\nYou can manually send ₹${Number(booking.fare_share).toFixed(0)} to:\n\n${upiId}`,
+      ),
     );
   };
 
@@ -296,6 +319,20 @@ export default function BookingDetailScreen() {
               ) : null}
               <InfoRow label="Seats booked" value={String(booking.seats_booked)} c={c} />
             </View>
+
+            {/* Profile Link */}
+            <TouchableOpacity
+              style={[styles.profileLinkBtn, { borderColor: c.border }]}
+              onPress={() => {
+                const targetId = isRider ? booking.passenger_id : booking.rider_id;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                router.push({ pathname: '/user-profile', params: { id: targetId } } as any);
+              }}
+            >
+              <Text style={[styles.profileLinkText, { color: c.accent }]}>
+                👤 View {isRider ? booking.passenger_name ?? 'Passenger' : booking.rider_name}'s Profile & Reviews →
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* ── Fare & Payment ── */}
@@ -561,11 +598,43 @@ export default function BookingDetailScreen() {
                   </TouchableOpacity>
                 </>
               )}
+              {/* Rate Ride Button (Phase 10) */}
+              <TouchableOpacity
+                style={[styles.rateBtn, { backgroundColor: '#F59E0B' }]}
+                onPress={() => {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  router.push({
+                    pathname: '/rate-ride',
+                    params: {
+                      bookingId: booking.id,
+                      revieweeName: isRider ? booking.passenger_name : booking.rider_name,
+                      revieweeRole: isRider ? 'passenger' : 'rider',
+                    },
+                  } as any);
+                }}
+              >
+                <Text style={styles.rateBtnText}>⭐ Rate Your Co-commuter</Text>
+              </TouchableOpacity>
+
               <Text style={[styles.hint, { color: '#6B7280', textAlign: 'center', fontSize: 11 }]}>
                 No commission. No markup. Pure cost sharing. 🤝
               </Text>
             </View>
           )}
+
+          {/* Safety & Moderation Link */}
+          <TouchableOpacity
+            style={styles.bottomSafetyLink}
+            onPress={() => {
+              const targetId = isRider ? booking.passenger_id : booking.rider_id;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              router.push({ pathname: '/user-profile', params: { id: targetId } } as any);
+            }}
+          >
+            <Text style={[styles.bottomSafetyText, { color: c.textMuted }]}>
+              🛡️ Need help? Report or block this user
+            </Text>
+          </TouchableOpacity>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -674,5 +743,28 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sendBtnText: { color: '#fff', fontSize: 20, fontWeight: '700' },
+
+  profileLinkBtn: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    alignItems: 'center',
+  },
+  profileLinkText: { fontSize: 13, fontWeight: '600' },
+
+  rateBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  rateBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+
+  bottomSafetyLink: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  bottomSafetyText: { fontSize: 12, fontWeight: '600' },
 });
 

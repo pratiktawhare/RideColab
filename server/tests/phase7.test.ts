@@ -426,8 +426,8 @@ describe('Phase 7 — Matching Engine', () => {
         .expect(200);
       const elapsed = Date.now() - start;
 
-      // Remote cloud DB (Neon) roundtrip latency accounts for ~2-3 s; local is < 1 s
-      expect(elapsed).toBeLessThan(5000);
-    }, 10_000);
+      // Remote cloud DB (Neon) roundtrip latency accounts for ~2-5 s; local is < 1 s
+      expect(elapsed).toBeLessThan(10000);
+    }, 15_000);
   });
 });

@@ -322,6 +322,7 @@ export interface Booking {
   route_geojson?: string | null;
   depart_at: string;
   rider_name: string;
+  rider_upi?: string | null;
   rider_trust: number;
   passenger_name?: string;
   passenger_trust?: number;
@@ -446,4 +447,106 @@ export const liveApi = {
     request<{ safe_arrival_logged: boolean }>(`/bookings/${bookingId}/safe-arrival`, {
       method: 'POST',
     }),
+};
+
+// ─── Ratings & Trust API (Phase 10) ───────────────────────────
+export interface Review {
+  id: string;
+  booking_id: string;
+  reviewer_id: string;
+  reviewer_name?: string;
+  reviewee_id: string;
+  rating: number;
+  tags: string[];
+  comment: string | null;
+  created_at: string;
+}
+
+export interface RatingInput {
+  rating: number;
+  tags: string[];
+  comment?: string;
+}
+
+export interface TrustScoreInfo {
+  score: number;
+  badge: 'New' | 'Regular' | 'Trusted' | 'Verified';
+  avg_rating: number;
+  total_trips: number;
+  total_ratings: number;
+  community_member: boolean;
+  profile_complete: boolean;
+  cancellation_rate: number;
+}
+
+export interface SavingsSummary {
+  money_saved: number;
+  co2_avoided_kg: number;
+  commute_streak: number;
+  total_trips: number;
+  total_distance_km: number;
+}
+
+export interface PublicUserProfile {
+  id: string;
+  name: string;
+  trust_score: number;
+  avg_rating: number;
+  total_ratings: number;
+  total_trips: number;
+  community_member: boolean;
+  created_at: string;
+}
+
+export interface ReportInput {
+  reported_id: string;
+  booking_id?: string;
+  reason: string;
+  details?: string;
+}
+
+export interface Report {
+  id: string;
+  reporter_id: string;
+  reported_id: string;
+  booking_id: string | null;
+  reason: string;
+  details: string | null;
+  status: string;
+  created_at: string;
+}
+
+export const ratingsApi = {
+  rate: (bookingId: string, data: RatingInput) =>
+    request<Review>(`/bookings/${bookingId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getUserRatings: (userId: string, page = 1) =>
+    request<{ reviews: Review[]; total: number; page: number }>(`/users/${userId}/ratings?page=${page}`),
+
+  getUserTrust: (userId: string) => request<TrustScoreInfo>(`/users/${userId}/trust`),
+
+  getTags: () => request<string[]>('/ratings/tags'),
+};
+
+export const savingsApi = {
+  getSavings: () => request<SavingsSummary>('/users/me/savings'),
+};
+
+export const trustApi = {
+  blockUser: (userId: string) =>
+    request<{ blocked: boolean }>(`/users/${userId}/block`, { method: 'POST' }),
+
+  unblockUser: (userId: string) =>
+    request<{ blocked: boolean }>(`/users/${userId}/block`, { method: 'DELETE' }),
+
+  fileReport: (data: ReportInput) =>
+    request<Report>('/reports', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getPublicProfile: (userId: string) => request<PublicUserProfile>(`/users/${userId}`),
 };

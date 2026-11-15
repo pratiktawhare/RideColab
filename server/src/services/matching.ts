@@ -59,6 +59,8 @@ export interface SearchParams {
   vehicle_type?: string | null;
   /** Passenger gender for preference scoring (optional) */
   passenger_gender?: string | null;
+  /** Passenger user ID — used to filter blocked users */
+  passenger_id?: string | null;
 }
 
 export interface SmartPickup {
@@ -160,6 +162,12 @@ WHERE t.status = 'open'
   AND ($9::uuid IS NULL OR t.community_id = $9::uuid)
   AND ($10 = false OR t.is_women_only = true)
   AND ($11::text IS NULL OR vc.type = $11::text)
+  -- block filter: exclude riders blocked by or who blocked the passenger
+  AND ($12::uuid IS NULL OR t.rider_id NOT IN (
+    SELECT blocked_id FROM blocked_users WHERE blocker_id = $12::uuid
+    UNION
+    SELECT blocker_id FROM blocked_users WHERE blocked_id = $12::uuid
+  ))
 ORDER BY t.depart_at
 LIMIT 50
 `;
@@ -205,7 +213,7 @@ export async function searchRides(params: SearchParams): Promise<MatchResult[]> 
     pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     departure_time, seats = 1, radius_m = 500,
     women_only = false, community_id = null, vehicle_type = null,
-    passenger_gender = null,
+    passenger_gender = null, passenger_id = null,
   } = params;
 
   const earliest = new Date(departure_time.getTime() - 30 * 60_000);
@@ -222,6 +230,7 @@ export async function searchRides(params: SearchParams): Promise<MatchResult[]> 
       community_id,                 // $9
       women_only,                   // $10
       vehicle_type,                 // $11
+      passenger_id,                 // $12
     ],
   );
 

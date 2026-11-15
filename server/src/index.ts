@@ -24,6 +24,9 @@ import { fareRouter, adminFuelRouter } from '~/routes/fare';
 import searchRouter from '~/routes/search';
 import bookingsRouter from '~/routes/bookings';
 import liveRouter, { sharePageHandler } from '~/routes/live';
+import ratingsRouter from '~/routes/ratings';
+import savingsRouter from '~/routes/savings';
+import trustRouter from '~/routes/trust';
 import { resetWeeklyCounters, materialiseRecurringTrips } from '~/services/trips';
 import { query } from '~/db/pool';
 import {
@@ -127,6 +130,9 @@ app.use('/api/v1/admin/fuel-prices', adminFuelRouter);
 app.use('/api/v1/search', searchRouter);
 app.use('/api/v1/bookings', bookingsRouter);
 app.use('/api/v1', liveRouter);
+app.use('/api/v1', ratingsRouter);
+app.use('/api/v1', savingsRouter);
+app.use('/api/v1', trustRouter);
 
 // ─── Public live share page (no /api/v1 prefix) ──────────────
 app.get('/share/:token', sharePageHandler);

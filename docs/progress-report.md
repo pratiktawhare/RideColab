@@ -18,7 +18,7 @@
 | 7 | Matching Engine | ✅ Complete | `phase-7` | Pending | 2026-10-29 |
 | 8 | Booking Flow | ✅ Complete | `phase-8` | Pending | 2026-11-02 |
 | 9 | Live Ride and Safety | ✅ Complete | `phase-9` | Pending | 2026-11-03 |
-| 10 | Payments, Ratings and Trust | ⏳ Not started | — | — | — |
+| 10 | Payments, Ratings and Trust | ✅ Complete | `phase-10` | Pending | 2026-11-16 |
 | 11 | Communities and Admin Panel | ⏳ Not started | — | — | — |
 | 12 | Creative Features Pack | ⏳ Not started | — | — | — |
 | 13 | Data Science | ⏳ Not started | — | — | — |
@@ -565,7 +565,81 @@ Tests:       141 passed, 141 total
 ---
 
 ### Phase 10 Report
-**Status**: ⏳ Not started
+**Status**: ✅ Complete — 2026-11-16
+
+#### What was built:
+- **Database & Migrations (`005_phase10_ratings_trust.sql`)**:
+  - `reviews` table extended with `tags TEXT[]`
+  - `trust_scores` table extended with formula columns: `avg_rating`, `total_ratings`, `cancellation_rate`, `community_member`, `profile_complete`
+  - `bookings` table extended with `payment_confirmed` and `payment_confirmed_at`
+  - New `blocked_users` table with bidirectional blocking support
+  - New `reports` table with status auditing and reason taxonomy
+  - Seeded runtime configs: `payment.demo_mode`, `trust.recalc_on_rating`
+- **Server Services (`server/src/services/`)**:
+  - `ratings.ts`: Full review submission pipeline (validates 24-hour window, enforces ride completion & participant-only rules, prevents duplicates), paginated review queries, tag listing.
+  - `ratings.ts` Trust Score v1 Engine: Full mathematical formula implementation:
+    `profile_completeness × 15 + community_member × 10 + min(trips × 2, 30) + (avg_rating / 5) × 25 + (1 − cancellation_rate) × 20`
+    with tier badge mapping: `New` (0–20), `Regular` (21–50), `Trusted` (51–75), `Verified` (76–100).
+  - `savings.ts`: Live calculation of rupees saved against solo trip cost, CO₂ avoided (kg) using fuel-specific emission coefficients (petrol: 0.133, diesel: 0.157, cng: 0.096, electric: 0.025 kg/km), commute day streak, and total km shared.
+  - `trust.ts`: Bidirectional user blocking/unblocking, report filing against violators with reason taxonomy.
+  - `matching.ts`: PostGIS matching query enhanced with subquery to automatically exclude trips offered by or requested by blocked users.
+- **Server Routes (`server/src/routes/`)**:
+  - `POST /api/v1/bookings/:id/rate` — submit rating within 24h
+  - `GET /api/v1/users/:id/ratings` — paginated public reviews
+  - `GET /api/v1/users/:id/trust` — trust score, badge, and metrics
+  - `GET /api/v1/ratings/tags` — list of supported rating tags
+  - `GET /api/v1/users/me/savings` — personal money saved, CO₂ avoided, streak
+  - `POST /api/v1/reports` — file safety/behavior report
+  - `POST /api/v1/users/:id/block` — block user
+  - `DELETE /api/v1/users/:id/block` — unblock user
+  - `GET /api/v1/users/:id` — public user profile (safe, no PII/contact details exposed)
+- **Client Features & Screens (`client/`)**:
+  - `client/services/api.ts`: Added typed `ratingsApi`, `savingsApi`, `trustApi` interfaces and methods.
+  - `client/app/rate-ride.tsx`: Star rating interface (1–5 stars), tag chips selection, comment input (max 500 chars), anonymous feedback disclaimer.
+  - `client/app/user-profile.tsx`: Full public profile screen with avatar, Trust Score badge (New/Regular/Trusted/Verified), stats grid (score, star rating, trips), community verification badge, recent reviews list with tags, and Block / Report moderation modal.
+  - `client/app/(tabs)/savings.tsx`: Full real-time Savings & Impact dashboard: Hero money saved card, CO₂ avoided metric, commute day streak with 🔥, tree equivalence calculation (1 tree ≈ 20 kg CO₂/year), and zero-profit cost sharing info.
+  - `client/app/booking-detail.tsx`: Deep-link UPI payment trigger (`upi://pay?pa=...`) with rider UPI verification and simulated demo payment fallback, "⭐ Rate Your Co-commuter" button upon trip completion, link to view co-commuter's public profile, and moderation access.
+
+#### Acceptance Checklist:
+- [x] "Pay via UPI" opens UPI deep link with pre-filled rider UPI ID, name, and exact fare share amount; fallback to simulated demo payment if rider has no UPI ID.
+- [x] Rating outside 24h window returns 403 `RATING_WINDOW_CLOSED`.
+- [x] Trust score formula verified mathematically: profile completeness + community + trips + ratings + cancellation rate.
+- [x] Badges correctly assigned across all 4 tiers (New, Regular, Trusted, Verified).
+- [x] Blocked users cannot match or find trips from the blocker.
+- [x] Savings dashboard accurately calculates money saved, CO₂ avoided, and streak.
+- [x] TypeScript clean: `tsc --noEmit` returns 0 errors on both client and server.
+- [x] All 18 automated tests in `tests/phase10.test.ts` pass cleanly.
+
+#### Test Results:
+```
+PASS tests/phase10.test.ts
+  Rating System
+    √ POST /bookings/:id/rate rejects without auth
+    √ POST /bookings/:id/rate rejects if not participant
+    √ POST /bookings/:id/rate rejects if booking is not completed
+    √ POST /bookings/:id/rate rejects if > 24 hours after completion
+    √ POST /bookings/:id/rate passenger rates rider successfully
+    √ POST /bookings/:id/rate duplicate rating returns 409 ALREADY_RATED
+    √ POST /bookings/:id/rate rider rates passenger successfully
+    √ GET /users/:id/ratings returns paginated reviews
+    √ GET /ratings/tags returns valid tag choices
+  Trust Score & Badges
+    √ Trust badge returns correct tier
+    √ GET /users/:id/trust returns recalculated score and badge
+  Savings Service
+    √ GET /users/me/savings returns calculated money and CO2 saved
+  Trust Safety: Block & Reports
+    √ POST /reports rejects self-report
+    √ POST /reports files report against user successfully
+    √ POST /users/:id/block blocks a user
+    √ POST /search/rides excludes blocked rider from results
+    √ DELETE /users/:id/block unblocks a user
+    √ GET /users/:id returns public profile without PII
+
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+Time:        49.075 s
+```
 
 ---
 
