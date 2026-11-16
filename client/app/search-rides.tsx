@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-// Passenger search screen — Phase 7 Matching Engine
+// Passenger search screen — Phase 7 + Ride Polishing
+// Sub-route corridor matching with walking distance & pro-rata fares
 // ─────────────────────────────────────────────────────────────
 import React, { useState, useCallback, useEffect } from 'react';
 import {
@@ -30,24 +31,41 @@ function RideMatchCard({
   const dateStr = depTime.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   const scorePercent = Math.round(match.score * 100);
 
+  const calculatedFare = match.pro_rata_fare_set != null
+    ? match.pro_rata_fare_set
+    : match.fare_set != null
+    ? Math.ceil(match.fare_set / (match.seats_available + 1))
+    : '—';
+
+  const calculatedCap = match.pro_rata_fare_cap != null
+    ? match.pro_rata_fare_cap
+    : Math.ceil(match.fare_cap / (match.seats_available + 1));
+
   return (
     <TouchableOpacity
       style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}
       onPress={onPress}
       activeOpacity={0.8}
     >
-      {/* Header row */}
+      {/* Header row: Rider info + Relative Time Pill */}
       <View style={styles.cardHeader}>
         <View style={styles.riderInfo}>
           <Text style={[styles.riderName, { color: c.text }]}>{match.rider_name}</Text>
           <Text style={[styles.trustBadge, { color: c.accent }]}>⭐ {match.trust_score}</Text>
         </View>
-        <View style={[styles.scorePill, { backgroundColor: c.accentMuted }]}>
-          <Text style={[styles.scoreText, { color: c.accent }]}>{scorePercent}% match</Text>
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          {match.relative_time_badge ? (
+            <View style={[styles.timeBadge, { backgroundColor: c.accentMuted }]}>
+              <Text style={[styles.timeBadgeText, { color: c.accent }]}>{match.relative_time_badge}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.scorePill, { backgroundColor: c.inputBg }]}>
+            <Text style={[styles.scoreText, { color: c.textSecondary }]}>{scorePercent}%</Text>
+          </View>
         </View>
       </View>
 
-      {/* Route */}
+      {/* Driver's Total Route */}
       <View style={styles.routeRow}>
         <Text style={styles.routeDot}>🟢</Text>
         <Text style={[styles.routeLabel, { color: c.text }]} numberOfLines={1}>
@@ -62,12 +80,25 @@ function RideMatchCard({
         </Text>
       </View>
 
-      {/* Smart pickup */}
+      {/* Smart Meeting Point & Walking Distance (BlaBlaCar standard) */}
       <View style={[styles.pickupBadge, { backgroundColor: c.accentMuted }]}>
         <Text style={[styles.pickupText, { color: c.accent }]}>
           📍 Meet at: {match.smart_pickup.landmark ?? `${match.smart_pickup.lat.toFixed(4)}, ${match.smart_pickup.lng.toFixed(4)}`}
+          {match.walking_distance_m > 0 ? (
+            <Text style={{ fontWeight: '500' }}> · ~{match.walking_distance_m}m walk</Text>
+          ) : null}
         </Text>
       </View>
+
+      {/* Dropoff landmark if available */}
+      {match.smart_dropoff?.landmark && (
+        <View style={[styles.dropoffBadge, { backgroundColor: c.inputBg }]}>
+          <Text style={[styles.dropoffText, { color: c.textSecondary }]}>
+            🏁 Drops you at: {match.smart_dropoff.landmark}
+            {match.sub_leg_distance_km ? ` · ${match.sub_leg_distance_km} km` : ''}
+          </Text>
+        </View>
+      )}
 
       {/* Meta chips */}
       <View style={styles.chipRow}>
@@ -89,22 +120,27 @@ function RideMatchCard({
         </View>
       </View>
 
-      {/* Fare */}
+      {/* Pro-rata Fare share (strictly adhering to THE MONEY RULE) */}
       <View style={styles.fareRow}>
-        <Text style={[styles.fareLabel, { color: c.textSecondary }]}>Your share</Text>
-        <Text style={[styles.fareValue, { color: c.text }]}>
-          ₹{match.fare_set != null ? Math.ceil(match.fare_set / (match.seats_available + 1)) : '—'}
+        <View>
+          <Text style={[styles.fareLabel, { color: c.textSecondary }]}>Your split fuel share</Text>
+          {match.sub_leg_distance_km > 0 ? (
+            <Text style={[styles.fareSub, { color: c.textMuted }]}>Pro-rata for {match.sub_leg_distance_km} km</Text>
+          ) : null}
+        </View>
+        <Text style={[styles.fareValue, { color: c.accent }]}>
+          ₹{calculatedFare}
           <Text style={[styles.fareCap, { color: c.textSecondary }]}>
-            {' '}/ max ₹{Math.ceil(match.fare_cap / (match.seats_available + 1))}
+            {' '}/ max ₹{calculatedCap}
           </Text>
         </Text>
       </View>
 
-      {/* Score breakdown — "Why this match?" */}
+      {/* Score breakdown */}
       <View style={styles.whyRow}>
-        <Text style={[styles.whyLabel, { color: c.textSecondary }]}>Why this match?</Text>
+        <Text style={[styles.whyLabel, { color: c.textSecondary }]}>Match fit:</Text>
         <Text style={[styles.whyChips, { color: c.textSecondary }]}>
-          Route {Math.round(match.score_breakdown.route_overlap * 100 / 0.30)}% ·{' '}
+          Corridor {Math.round(match.score_breakdown.route_overlap * 100 / 0.30)}% ·{' '}
           Time {Math.round(match.score_breakdown.time_fit * 100 / 0.25)}% ·{' '}
           Trust {Math.round(match.score_breakdown.trust * 100 / 0.15)}%
         </Text>
@@ -119,44 +155,43 @@ export default function SearchRidesScreen() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { theme } = useThemeStore() as any;
   const c = theme.colors as Record<string, string>;
-  const { search: storeSearch, setOrigin, setDestination } = useTripsStore();
+
+  const { search: storeSearch } = useTripsStore();
 
   const [pickup, setPickup] = useState<GeoResult | null>(storeSearch.origin);
   const [dropoff, setDropoff] = useState<GeoResult | null>(storeSearch.destination);
-  const [womenOnly, setWomenOnly] = useState(false);
-  const [seats, setSeats] = useState(1);
+  const [seats, setSeats] = useState<number>(1);
+  const [womenOnly, setWomenOnly] = useState<boolean>(false);
+  const [radiusM, setRadiusM] = useState<number>(1500); // 1.5km default
+  const [windowMins, setWindowMins] = useState<number>(90); // ±90 mins default
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<MatchResult[] | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canSearch = pickup && dropoff;
+  const canSearch = Boolean(pickup && dropoff);
 
-  const handlePickupSelect = (r: GeoResult) => {
-    setPickup(r);
-    setOrigin(r);
-  };
+  const handlePickupSelect = (r: GeoResult) => { setPickup(r); setResults(null); };
+  const handleDropoffSelect = (r: GeoResult) => { setDropoff(r); setResults(null); };
 
-  const handleDropoffSelect = (r: GeoResult) => {
-    setDropoff(r);
-    setDestination(r);
-  };
-
-  const handleSearch = useCallback(async (pOrigin = pickup, pDest = dropoff) => {
+  const handleSearch = useCallback(async (originOverride?: GeoResult, destOverride?: GeoResult) => {
+    const pOrigin = originOverride ?? pickup;
+    const pDest = destOverride ?? dropoff;
     if (!pOrigin || !pDest) return;
+
     setLoading(true);
     setError(null);
-    setResults(null);
     try {
       const data = await searchApi.searchRides({
         pickup_lat:     pOrigin.lat,
         pickup_lng:     pOrigin.lng,
         dropoff_lat:    pDest.lat,
         dropoff_lng:    pDest.lng,
-        departure_time: new Date(Date.now() + 30 * 60_000).toISOString(), // 30 min from now
+        departure_time: new Date(Date.now() + 30 * 60_000).toISOString(),
         seats,
-        radius_m: 800,
-        women_only: womenOnly,
+        radius_m:       radiusM,
+        window_mins:    windowMins,
+        women_only:     womenOnly,
       });
       setResults(data);
     } catch (e) {
@@ -164,9 +199,8 @@ export default function SearchRidesScreen() {
     } finally {
       setLoading(false);
     }
-  }, [pickup, dropoff, seats, womenOnly]);
+  }, [pickup, dropoff, seats, radiusM, windowMins, womenOnly]);
 
-  // Auto-search on mount if origin and destination were passed from Home screen
   useEffect(() => {
     if (storeSearch.origin && storeSearch.destination) {
       handleSearch(storeSearch.origin, storeSearch.destination);
@@ -175,30 +209,37 @@ export default function SearchRidesScreen() {
   }, []);
 
   const handleSelectMatch = (match: MatchResult) => {
-    const estShare = match.fare_set != null ? Math.ceil(match.fare_set / (match.seats_available + 1)) * seats : 0;
+    const farePerSeat = match.pro_rata_fare_set ?? (match.fare_set != null ? Math.ceil(match.fare_set / (match.seats_available + 1)) : 0);
+    const estShare = farePerSeat * seats;
+
     Alert.alert(
       'Request Booking',
-      `Ride with ${match.rider_name} (${match.vehicle_make} ${match.vehicle_model})\n` +
-      `Seats: ${seats}\n` +
-      `Est. Fuel Share: ₹${estShare}\n` +
-      `Pickup: ${pickup?.label ?? match.origin_label}\n` +
-      `Dropoff: ${dropoff?.label ?? match.destination_label}\n\n` +
-      `Send request to rider?`,
+      `🚗 Rider: ${match.rider_name} (${match.vehicle_make} ${match.vehicle_model})\n` +
+      `💺 Seats: ${seats}\n` +
+      `💰 Split Cost: ₹${estShare} (No Commission)\n` +
+      `📍 Meet at: ${match.smart_pickup.landmark ?? 'Route Point'}\n` +
+      `🏁 Drop at: ${match.smart_dropoff?.landmark ?? match.destination_label}\n\n` +
+      `Send booking request to rider?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Request',
+          text: 'Request Seat',
           onPress: async () => {
             try {
               const booking = await bookingApi.create({
-                trip_id: match.trip_id,
-                seats_booked: seats,
-                pickup_label: pickup?.label ?? match.origin_label,
-                pickup_lat: pickup?.lat,
-                pickup_lng: pickup?.lng,
-                dropoff_label: dropoff?.label ?? match.destination_label,
-                dropoff_lat: dropoff?.lat,
-                dropoff_lng: dropoff?.lng,
+                trip_id:             match.trip_id,
+                seats_booked:        seats,
+                pickup_label:        pickup?.label ?? match.origin_label,
+                pickup_lat:          pickup?.lat,
+                pickup_lng:          pickup?.lng,
+                dropoff_label:       dropoff?.label ?? match.destination_label,
+                dropoff_lat:         dropoff?.lat,
+                dropoff_lng:         dropoff?.lng,
+                pickup_landmark:     match.smart_pickup.landmark ?? undefined,
+                dropoff_landmark:    match.smart_dropoff?.landmark ?? undefined,
+                walking_distance_m:  match.walking_distance_m,
+                sub_leg_distance_km: match.sub_leg_distance_km,
+                fare_share:          estShare,
               });
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               router.push({ pathname: '/booking-detail', params: { id: booking.id } } as any);
@@ -264,6 +305,62 @@ export default function SearchRidesScreen() {
             </View>
           </View>
 
+          {/* Corridor Radius Selector */}
+          <View style={{ marginTop: 6 }}>
+            <Text style={[styles.filterSubLabel, { color: c.textSecondary }]}>Corridor Radius:</Text>
+            <View style={styles.filterChipRow}>
+              {[
+                { label: '500m (Strict)', val: 500 },
+                { label: '1.5km (Standard)', val: 1500 },
+                { label: '3.0km (Highway)', val: 3000 },
+              ].map((chip) => (
+                <TouchableOpacity
+                  key={chip.val}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: radiusM === chip.val ? c.accent : c.inputBg,
+                      borderColor: radiusM === chip.val ? c.accent : c.border,
+                    },
+                  ]}
+                  onPress={() => setRadiusM(chip.val)}
+                >
+                  <Text style={[styles.filterChipText, { color: radiusM === chip.val ? '#fff' : c.textSecondary }]}>
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Departure Window Selector */}
+          <View style={{ marginTop: 6 }}>
+            <Text style={[styles.filterSubLabel, { color: c.textSecondary }]}>Departure Window:</Text>
+            <View style={styles.filterChipRow}>
+              {[
+                { label: '±30m', val: 30 },
+                { label: '±90m (Standard)', val: 90 },
+                { label: '±3 hours', val: 180 },
+              ].map((chip) => (
+                <TouchableOpacity
+                  key={chip.val}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: windowMins === chip.val ? c.accent : c.inputBg,
+                      borderColor: windowMins === chip.val ? c.accent : c.border,
+                    },
+                  ]}
+                  onPress={() => setWindowMins(chip.val)}
+                >
+                  <Text style={[styles.filterChipText, { color: windowMins === chip.val ? '#fff' : c.textSecondary }]}>
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Women-only filter */}
           <View style={styles.switchRow}>
             <Text style={[styles.switchLabel, { color: c.text }]}>👩 Women-only trips only</Text>
@@ -277,10 +374,10 @@ export default function SearchRidesScreen() {
 
           <AppButton
             label={loading ? 'Searching…' : canSearch ? '🔍 Search rides' : 'Enter pickup & drop-off'}
-            onPress={handleSearch}
+            onPress={() => handleSearch()}
             variant="primary"
             disabled={!canSearch || loading}
-            style={{ marginTop: 4 }}
+            style={{ marginTop: 8 }}
           />
         </View>
 
@@ -288,7 +385,7 @@ export default function SearchRidesScreen() {
         {loading && (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={c.accent} />
-            <Text style={[styles.loadingText, { color: c.textSecondary }]}>Finding matching rides…</Text>
+            <Text style={[styles.loadingText, { color: c.textSecondary }]}>Finding matching rides along corridor…</Text>
           </View>
         )}
 
@@ -304,7 +401,7 @@ export default function SearchRidesScreen() {
           <>
             <Text style={[styles.resultsLabel, { color: c.textSecondary }]}>
               {results.length === 0
-                ? 'No rides found for this route and time.'
+                ? 'No rides found for this route and time window.'
                 : `${results.length} ride${results.length !== 1 ? 's' : ''} found · sorted by match score`}
             </Text>
 
@@ -313,17 +410,17 @@ export default function SearchRidesScreen() {
                 <Text style={{ fontSize: 40 }}>🔍</Text>
                 <Text style={[styles.emptyText, { color: c.textSecondary }]}>
                   No open rides match your corridor right now.{'\n'}
-                  Try a wider radius or a different time.
+                  Try selecting a 3.0km corridor or expanding the departure window.
                 </Text>
               </View>
             )}
 
-            {results.map(match => (
+            {results.map((match) => (
               <RideMatchCard
                 key={match.trip_id}
                 match={match}
-                c={c}
                 onPress={() => handleSelectMatch(match)}
+                c={c}
               />
             ))}
           </>
@@ -336,66 +433,135 @@ export default function SearchRidesScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 20, paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
-  backBtn: { padding: 4 },
-  backIcon: { fontSize: 22, fontWeight: '700' },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
+  backBtn: { marginRight: 12, padding: 4 },
+  backIcon: { fontSize: 20 },
+  headerTitle: { fontSize: 18, fontWeight: '700' },
+  scroll: { padding: 16, gap: 12 },
 
-  scroll: { padding: 16, gap: 16, paddingBottom: 40 },
-  formCard: { borderRadius: 20, padding: 16, borderWidth: 1, gap: 14 },
-  connector: { width: 2, height: 8, marginLeft: 17, borderRadius: 1 },
+  formCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  connector: { width: 2, height: 8, marginLeft: 16, marginVertical: -2 },
 
-  seatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  seatsLabel: { fontSize: 15, fontWeight: '500' },
+  seatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  seatsLabel: { fontSize: 14, fontWeight: '600' },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  stepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   stepIcon: { fontSize: 18, fontWeight: '700', lineHeight: 20 },
-  stepValue: { fontSize: 17, fontWeight: '700', minWidth: 20, textAlign: 'center' },
+  stepValue: { fontSize: 16, fontWeight: '700', minWidth: 20, textAlign: 'center' },
 
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  switchLabel: { fontSize: 15, fontWeight: '500' },
+  filterSubLabel: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  filterChipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  filterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  filterChipText: { fontSize: 11, fontWeight: '600' },
 
-  centered: { alignItems: 'center', gap: 12, paddingVertical: 32 },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  switchLabel: { fontSize: 14, fontWeight: '500' },
+
+  centered: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   loadingText: { fontSize: 14 },
+  errorBox: { borderRadius: 10, borderWidth: 1, padding: 12 },
+  errorText: { color: '#DC2626', fontSize: 13 },
 
-  errorBox: { borderRadius: 12, padding: 14, borderWidth: 1 },
-  errorText: { color: '#B91C1C', fontSize: 14 },
+  resultsLabel: { fontSize: 13, fontWeight: '600', marginTop: 4 },
+  emptyBox: { borderRadius: 14, borderWidth: 1, padding: 24, alignItems: 'center', gap: 8 },
+  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
-  resultsLabel: { fontSize: 13, fontWeight: '500', marginBottom: -4 },
-
-  emptyBox: { borderRadius: 16, padding: 28, borderWidth: 1, alignItems: 'center', gap: 10 },
-  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
-
-  // Match card
-  card: { borderRadius: 20, padding: 16, borderWidth: 1, gap: 10 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  riderInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  riderName: { fontSize: 16, fontWeight: '700' },
-  trustBadge: { fontSize: 13, fontWeight: '600' },
-  scorePill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  scoreText: { fontSize: 12, fontWeight: '700' },
+  card: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 8,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  riderInfo: { flex: 1, gap: 2 },
+  riderName: { fontSize: 15, fontWeight: '700' },
+  trustBadge: { fontSize: 12, fontWeight: '600' },
+  timeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  timeBadgeText: { fontSize: 11, fontWeight: '700' },
+  scorePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  scoreText: { fontSize: 11, fontWeight: '700' },
 
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  routeDot: { fontSize: 12 },
-  routeLabel: { fontSize: 14, fontWeight: '500', flex: 1 },
-  routeLine: { width: 2, height: 6, marginLeft: 9, borderRadius: 1 },
+  routeDot: { fontSize: 10 },
+  routeLabel: { fontSize: 13, fontWeight: '600', flex: 1 },
+  routeLine: { width: 2, height: 10, marginLeft: 4, marginVertical: 1 },
 
-  pickupBadge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  pickupText: { fontSize: 12, fontWeight: '600' },
+  pickupBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 2,
+  },
+  pickupText: { fontSize: 12, fontWeight: '700' },
+  dropoffBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  dropoffText: { fontSize: 11, fontWeight: '500' },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  chipText: { fontSize: 12, fontWeight: '500' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+  chip: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  chipText: { fontSize: 11, fontWeight: '500' },
 
-  fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  fareLabel: { fontSize: 13 },
-  fareValue: { fontSize: 18, fontWeight: '700' },
-  fareCap: { fontSize: 13 },
+  fareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  fareLabel: { fontSize: 13, fontWeight: '600' },
+  fareSub: { fontSize: 11 },
+  fareValue: { fontSize: 17, fontWeight: '800' },
+  fareCap: { fontSize: 11, fontWeight: '400' },
 
-  whyRow: { gap: 2 },
-  whyLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  whyChips: { fontSize: 12 },
+  whyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  whyLabel: { fontSize: 11, fontWeight: '600' },
+  whyChips: { fontSize: 11, flex: 1 },
 });

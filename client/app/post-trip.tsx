@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useTripsStore } from '@/store/tripsStore';
 import { AppButton } from '@/components/AppButton';
 import { PlaceSearch } from '@/components/PlaceSearch';
-import { tripsApi, fareApi, GeoResult, FareEstimate } from '@/services/api';
+import { tripsApi, fareApi, GeoResult, FareEstimate, Stopover } from '@/services/api';
 import type { CreateTripPayload } from '@/services/api';
 
 interface VehicleOption {
@@ -69,6 +69,50 @@ export default function PostTripScreen() {
   const [isWomenOnly, setIsWomenOnly] = useState(false);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Stopovers along route
+  const [stopovers, setStopovers] = useState<Stopover[]>([]);
+  const [suggestedStops, setSuggestedStops] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+
+  // Auto-suggest popular junctions when origin & destination are selected
+  useEffect(() => {
+    if (!origin || !destination) {
+      setSuggestedStops([]);
+      return;
+    }
+    let cancelled = false;
+    tripsApi
+      .suggestStopovers({
+        origin_lat: origin.lat,
+        origin_lng: origin.lng,
+        dest_lat: destination.lat,
+        dest_lng: destination.lng,
+      })
+      .then((stops) => {
+        if (!cancelled) setSuggestedStops(stops);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [origin, destination]);
+
+  const handleAddSuggestedStop = (stop: { name: string; lat: number; lng: number }) => {
+    if (stopovers.some((s) => s.label === stop.name)) return;
+    setStopovers((prev) => [
+      ...prev,
+      { order: prev.length + 1, label: stop.name, lat: stop.lat, lng: stop.lng },
+    ]);
+  };
+
+  const handleAddStopover = (s: Stopover) => {
+    if (stopovers.some((item) => item.label === s.label)) return;
+    setStopovers((prev) => [...prev, s]);
+  };
+
+  const handleRemoveStopover = (index: number) => {
+    setStopovers((prev) =>
+      prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, order: i + 1 })),
+    );
+  };
 
   // Load user vehicles
   useEffect(() => {
@@ -196,6 +240,7 @@ export default function PostTripScreen() {
         rrule: isRecurring ? 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' : undefined,
         is_women_only: isWomenOnly,
         notes: notes.trim() || undefined,
+        stopovers: stopovers.length > 0 ? stopovers : undefined,
       };
 
       const trip = await tripsApi.create(payload);
@@ -248,6 +293,102 @@ export default function PostTripScreen() {
                 value={destination?.label ?? ''}
                 onSelect={handleDestinationSelect}
                 dotColor="🔴"
+              />
+            </View>
+          </View>
+
+          {/* Intermediate Stopovers / Via Points (BlaBlaCar standard) */}
+          <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.sectionLabel, { color: c.text }]}>Stopovers (Optional)</Text>
+              <Text style={{ fontSize: 11, color: c.textMuted }}>Pick up along the way</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: c.textSecondary }}>
+              Adding stops lets co-travelers along major junctions find your ride.
+            </Text>
+
+            {/* Selected stopovers */}
+            {stopovers.length > 0 && (
+              <View style={{ gap: 6, marginVertical: 4 }}>
+                {stopovers.map((s, idx) => (
+                  <View
+                    key={idx}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: c.inputBg,
+                      borderColor: c.border,
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, color: c.text, flex: 1 }}>
+                      📍 Stop #{idx + 1}: <Text style={{ fontWeight: '700' }}>{s.label}</Text>
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveStopover(idx)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={{ color: '#EF4444', fontSize: 16, fontWeight: '700' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Suggested stops along route */}
+            {suggestedStops.length > 0 && (
+              <View style={{ marginTop: 2 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: c.textSecondary, marginBottom: 6 }}>
+                  Suggested junctions on your path:
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {suggestedStops.map((stop, idx) => {
+                    const alreadyAdded = stopovers.some((s) => s.label === stop.name);
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          backgroundColor: alreadyAdded ? c.inputBg : c.accentMuted,
+                          borderColor: alreadyAdded ? c.border : c.accent,
+                          opacity: alreadyAdded ? 0.6 : 1,
+                        }}
+                        onPress={() => handleAddSuggestedStop(stop)}
+                        disabled={alreadyAdded}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: alreadyAdded ? c.textMuted : c.accent }}>
+                          {alreadyAdded ? `✓ ${stop.name}` : `+ ${stop.name}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Add custom via stop */}
+            <View style={{ zIndex: 10, marginTop: 4 }}>
+              <PlaceSearch
+                label="+ Add custom via stop"
+                value=""
+                onSelect={(r) => {
+                  if (r && r.label) {
+                    handleAddStopover({
+                      order: stopovers.length + 1,
+                      label: r.label,
+                      lat: r.lat,
+                      lng: r.lng,
+                    });
+                  }
+                }}
+                dotColor="🟡"
               />
             </View>
           </View>

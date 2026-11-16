@@ -1,9 +1,9 @@
 /**
- * Phase 7 — Matching Engine
+ * Phase 7 + Ride Polishing — Matching Engine
  *
  * Turns a passenger's pickup/dropoff request into a ranked list of open trips.
- * Uses PostGIS corridor search (zero ORS calls) followed by JS scoring with
- * hot-reloadable weights from ranking_weights.json.
+ * Uses PostGIS corridor search (1.5km default corridor, ±90 min departure window,
+ * sub-route distance & walking distance calculations) followed by JS scoring.
  */
 import fs from 'fs';
 import path from 'path';
@@ -50,10 +50,11 @@ export interface SearchParams {
   pickup_lng: number;
   dropoff_lat: number;
   dropoff_lng: number;
-  /** Centre of ±30-min departure window */
+  /** Centre of departure window */
   departure_time: Date;
   seats?: number;
   radius_m?: number;
+  window_mins?: number;
   women_only?: boolean;
   community_id?: string | null;
   vehicle_type?: string | null;
@@ -81,6 +82,11 @@ export interface MatchResult {
   seats_available: number;
   fare_set: number | null;
   fare_cap: number;
+  pro_rata_fare_set: number | null;
+  pro_rata_fare_cap: number;
+  sub_leg_distance_km: number;
+  walking_distance_m: number;
+  relative_time_badge: string;
   is_women_only: boolean;
   vehicle_type: string;
   vehicle_make: string;
@@ -89,6 +95,8 @@ export interface MatchResult {
   community_id: string | null;
   notes: string | null;
   smart_pickup: SmartPickup;
+  smart_dropoff: SmartPickup;
+  stopovers: Array<{ order: number; label: string; lat: number; lng: number }>;
   score: number;
   /** Score breakdown for "Why this match?" */
   score_breakdown: {
@@ -116,12 +124,13 @@ SELECT
   t.is_women_only,
   t.community_id,
   t.notes,
+  COALESCE(t.stopovers, '[]'::jsonb) AS stopovers,
   vc.type               AS vehicle_type,
   vc.make               AS vehicle_make,
   vc.model              AS vehicle_model,
   v.plate_number        AS registration_suffix,
   -- route overlap fraction: how much of the trip corridor is shared with passenger
-  GREATEST(0, LEAST(1,
+  GREATEST(0.05, LEAST(1.0,
     ST_LineLocatePoint(t.route::geometry, ST_SetSRID(ST_MakePoint($4, $3), 4326))
       - ST_LineLocatePoint(t.route::geometry, ST_SetSRID(ST_MakePoint($2, $1), 4326))
   )) AS raw_overlap,
@@ -132,7 +141,21 @@ SELECT
   ST_Distance(
     ST_ClosestPoint(t.route::geometry, ST_SetSRID(ST_MakePoint($2, $1), 4326))::geography,
     ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
-  ) AS pickup_detour_m
+  ) AS pickup_detour_m,
+  -- smart dropoff: nearest point on route to passenger dropoff
+  ST_Y(ST_ClosestPoint(t.route::geometry, ST_SetSRID(ST_MakePoint($4, $3), 4326))) AS dropoff_snap_lat,
+  ST_X(ST_ClosestPoint(t.route::geometry, ST_SetSRID(ST_MakePoint($4, $3), 4326))) AS dropoff_snap_lng,
+  ST_Distance(
+    ST_ClosestPoint(t.route::geometry, ST_SetSRID(ST_MakePoint($4, $3), 4326))::geography,
+    ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography
+  ) AS dropoff_detour_m,
+  -- sub-leg distance in km
+  ROUND((
+    GREATEST(0.05,
+      ST_LineLocatePoint(t.route::geometry, ST_SetSRID(ST_MakePoint($4, $3), 4326))
+      - ST_LineLocatePoint(t.route::geometry, ST_SetSRID(ST_MakePoint($2, $1), 4326))
+    ) * t.distance_m / 1000.0
+  )::numeric, 1) AS sub_leg_distance_km
 FROM trips t
 JOIN users  u  ON t.rider_id   = u.id
 LEFT JOIN trust_scores ts ON ts.user_id = u.id
@@ -156,7 +179,7 @@ WHERE t.status = 'open'
   -- pickup must come before dropoff along route
   AND ST_LineLocatePoint(t.route::geometry, ST_SetSRID(ST_MakePoint($2, $1), 4326))
       < ST_LineLocatePoint(t.route::geometry, ST_SetSRID(ST_MakePoint($4, $3), 4326))
-  -- ±30 min departure window
+  -- departure window
   AND t.depart_at BETWEEN $7 AND $8
   -- optional filters
   AND ($9::uuid IS NULL OR t.community_id = $9::uuid)
@@ -180,7 +203,7 @@ async function nearestLandmark(lat: number, lng: number): Promise<string | null>
        WHERE ST_DWithin(
          location,
          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-         200
+         350
        )
        ORDER BY ST_Distance(
          location,
@@ -196,28 +219,45 @@ async function nearestLandmark(lat: number, lng: number): Promise<string | null>
 // ── Scoring helpers ───────────────────────────────────────────────────────────
 
 /** Gaussian decay: score=1 at Δt=0, ~0.6 at Δt=σ, ~0.14 at Δt=2σ */
-function gaussianTimeFit(tripTime: Date, requestedTime: Date, sigmaMins = 15): number {
+function gaussianTimeFit(tripTime: Date, requestedTime: Date, sigmaMins = 30): number {
   const deltaMs = Math.abs(tripTime.getTime() - requestedTime.getTime());
-  const deltaMin = deltaMs / 60_000;
-  return Math.exp(-(deltaMin * deltaMin) / (2 * sigmaMins * sigmaMins));
+  const deltaMins = deltaMs / 60_000;
+  return Math.exp(-0.5 * Math.pow(deltaMins / sigmaMins, 2));
 }
 
-/** 1 – (detour_m / radius_m), clamped 0–1 */
+/** Linear penalty from 0 m (1.0) to radius_m (0.0) */
 function detourScore(detourM: number, radiusM: number): number {
   return Math.max(0, 1 - detourM / radiusM);
+}
+
+function getRelativeTimeBadge(tripTime: Date, reqTime: Date): string {
+  const diffMs = tripTime.getTime() - reqTime.getTime();
+  const diffMins = Math.round(diffMs / 60_000);
+
+  if (Math.abs(diffMins) <= 5) return '🟢 Right on time';
+  if (diffMins > 0) {
+    if (diffMins < 60) return `Leaves in ${diffMins}m`;
+    const h = Math.floor(diffMins / 60);
+    const m = diffMins % 60;
+    return `+${h}h ${m > 0 ? `${m}m` : ''}`;
+  } else {
+    const absM = Math.abs(diffMins);
+    if (absM < 60) return `${absM}m earlier`;
+    return `-${Math.floor(absM / 60)}h earlier`;
+  }
 }
 
 // ── Main search function ──────────────────────────────────────────────────────
 export async function searchRides(params: SearchParams): Promise<MatchResult[]> {
   const {
     pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
-    departure_time, seats = 1, radius_m = 500,
+    departure_time, seats = 1, radius_m = 1500, window_mins = 90,
     women_only = false, community_id = null, vehicle_type = null,
     passenger_gender = null, passenger_id = null,
   } = params;
 
-  const earliest = new Date(departure_time.getTime() - 30 * 60_000);
-  const latest   = new Date(departure_time.getTime() + 30 * 60_000);
+  const earliest = new Date(departure_time.getTime() - window_mins * 60_000);
+  const latest   = new Date(departure_time.getTime() + window_mins * 60_000);
 
   const result = await query(
     SEARCH_SQL,
@@ -241,11 +281,14 @@ export async function searchRides(params: SearchParams): Promise<MatchResult[]> 
     result.rows.map(async (row) => {
       const snapLat: number = Number(row.pickup_snap_lat);
       const snapLng: number = Number(row.pickup_snap_lng);
+      const dropSnapLat: number = Number(row.dropoff_snap_lat);
+      const dropSnapLng: number = Number(row.dropoff_snap_lng);
       const detourM: number = Number(row.pickup_detour_m);
       const rawOverlap: number = Number(row.raw_overlap);
 
       const overlapScore = Math.min(1, Math.max(0, rawOverlap));
-      const tfScore      = gaussianTimeFit(new Date(row.departure_time as string), departure_time);
+      const tripDepart = new Date(row.departure_time as string);
+      const tfScore      = gaussianTimeFit(tripDepart, departure_time);
       const detScore     = detourScore(detourM, radius_m);
       const tScore       = Math.min(1, Number(row.trust_score) / 100);
 
@@ -261,20 +304,42 @@ export async function searchRides(params: SearchParams): Promise<MatchResult[]> 
         tScore       * weights.trust +
         prefScore    * weights.preferences;
 
-      // Nearest landmark for smart pickup label
-      const landmark = await nearestLandmark(snapLat, snapLng);
+      // Nearest landmark for pickup and dropoff
+      const [pickupLm, dropoffLm] = await Promise.all([
+        nearestLandmark(snapLat, snapLng),
+        nearestLandmark(dropSnapLat, dropSnapLng),
+      ]);
+
+      const subLegKm = Number(row.sub_leg_distance_km) || 0;
+      const walkingM = Math.round(detourM);
+
+      // Pro-rata fare calculations (THE MONEY RULE: cost split by actual sub-leg fraction)
+      const seatDenominator = Number(row.seats_available) + 1;
+      const fullCapPerSeat = Number(row.fare_cap) / seatDenominator;
+      const proRataFareCap = Math.ceil(fullCapPerSeat * rawOverlap);
+
+      let proRataFareSet: number | null = null;
+      if (row.fare_set != null) {
+        const fullSetPerSeat = Number(row.fare_set) / seatDenominator;
+        proRataFareSet = Math.ceil(fullSetPerSeat * rawOverlap);
+      }
 
       return {
         trip_id:              row.trip_id as string,
         rider_id:             row.rider_id as string,
         rider_name:           row.rider_name as string,
         trust_score:          Number(row.trust_score),
-        departure_time:       new Date(row.departure_time as string).toISOString(),
+        departure_time:       tripDepart.toISOString(),
         origin_label:         row.origin_label as string,
         destination_label:    row.destination_label as string,
         seats_available:      Number(row.seats_available),
         fare_set:             row.fare_set != null ? Number(row.fare_set) : null,
         fare_cap:             Number(row.fare_cap),
+        pro_rata_fare_set:    proRataFareSet,
+        pro_rata_fare_cap:    proRataFareCap,
+        sub_leg_distance_km:  subLegKm,
+        walking_distance_m:   walkingM,
+        relative_time_badge:  getRelativeTimeBadge(tripDepart, departure_time),
         is_women_only:        Boolean(row.is_women_only),
         vehicle_type:         row.vehicle_type as string,
         vehicle_make:         row.vehicle_make as string,
@@ -285,8 +350,14 @@ export async function searchRides(params: SearchParams): Promise<MatchResult[]> 
         smart_pickup: {
           lat:      snapLat,
           lng:      snapLng,
-          landmark,
+          landmark: pickupLm,
         },
+        smart_dropoff: {
+          lat:      dropSnapLat,
+          lng:      dropSnapLng,
+          landmark: dropoffLm,
+        },
+        stopovers:            (row.stopovers as Array<{ order: number; label: string; lat: number; lng: number }>) ?? [],
         score: Math.round(totalScore * 1000) / 1000,
         score_breakdown: {
           route_overlap: Math.round(overlapScore * weights.route_overlap * 1000) / 1000,

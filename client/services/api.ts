@@ -166,6 +166,14 @@ export const geocodingApi = {
 };
 
 // ─── Trips endpoints ──────────────────────────────────────────
+export interface Stopover {
+  order: number;
+  label: string;
+  lat: number;
+  lng: number;
+  est_offset_mins?: number;
+}
+
 export interface Trip {
   id: string;
   rider_id: string;
@@ -191,6 +199,8 @@ export interface Trip {
   distance_m: number | null;
   duration_s: number | null;
   created_at: string;
+  stopovers?: Stopover[];
+  corridor_radius_m?: number;
 }
 
 export interface CreateTripPayload {
@@ -209,6 +219,8 @@ export interface CreateTripPayload {
   rrule?: string;
   notes?: string;
   is_women_only?: boolean;
+  stopovers?: Stopover[];
+  corridor_radius_m?: number;
 }
 
 export const tripsApi = {
@@ -219,6 +231,10 @@ export const tripsApi = {
     ),
   mine: (page = 1) => request<Trip[]>(`/trips/mine?page=${page}`),
   get: (id: string) => request<Trip>(`/trips/${id}`),
+  suggestStopovers: (coords: { origin_lat: number; origin_lng: number; dest_lat: number; dest_lng: number }) =>
+    request<Array<{ name: string; lat: number; lng: number; category: string; position_fraction: number }>>(
+      `/trips/suggest-stopovers?origin_lat=${coords.origin_lat}&origin_lng=${coords.origin_lng}&dest_lat=${coords.dest_lat}&dest_lng=${coords.dest_lng}`,
+    ),
   update: (id: string, data: Partial<Pick<Trip, 'fare_set' | 'seats_total' | 'notes' | 'depart_at'>>) =>
     request<Trip>(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   cancel: (id: string) => request<{ message: string }>(`/trips/${id}`, { method: 'DELETE' }),
@@ -250,6 +266,11 @@ export interface MatchResult {
   seats_available: number;
   fare_set: number | null;
   fare_cap: number;
+  pro_rata_fare_set: number | null;
+  pro_rata_fare_cap: number;
+  sub_leg_distance_km: number;
+  walking_distance_m: number;
+  relative_time_badge: string;
   is_women_only: boolean;
   vehicle_type: string;
   vehicle_make: string;
@@ -258,6 +279,8 @@ export interface MatchResult {
   community_id: string | null;
   notes: string | null;
   smart_pickup: SmartPickup;
+  smart_dropoff?: SmartPickup;
+  stopovers?: Stopover[];
   score: number;
   score_breakdown: {
     route_overlap: number;
@@ -276,6 +299,7 @@ export interface RideSearchParams {
   departure_time: string;
   seats?: number;
   radius_m?: number;
+  window_mins?: number;
   women_only?: boolean;
   community_id?: string | null;
   vehicle_type?: string | null;
@@ -305,6 +329,12 @@ export interface Booking {
   dropoff_label: string | null;
   dropoff_lat: number | null;
   dropoff_lng: number | null;
+  pickup_landmark?: string | null;
+  dropoff_landmark?: string | null;
+  walking_distance_m?: number | null;
+  sub_leg_distance_km?: number | null;
+  boarding_otp?: string | null;
+  boarded_at?: string | null;
   fare_share: number | null;
   ride_code: string | null;
   created_at: string;
@@ -329,6 +359,7 @@ export interface Booking {
   vehicle_make: string;
   vehicle_model: string;
   plate_number: string;
+  stopovers?: Stopover[];
   // Phase 9 safety fields
   helmet_checked_at?: string | null;
   safe_arrival_at?: string | null;
@@ -352,6 +383,11 @@ export interface CreateBookingParams {
   dropoff_label?: string;
   dropoff_lat?: number;
   dropoff_lng?: number;
+  pickup_landmark?: string;
+  dropoff_landmark?: string;
+  walking_distance_m?: number;
+  sub_leg_distance_km?: number;
+  fare_share?: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -388,6 +424,12 @@ export const bookingApi = {
 
   complete: (id: string) =>
     request<Booking>(`/bookings/${id}/complete`, { method: 'POST' }),
+
+  verifyBoardingOtp: (id: string, otp: string) =>
+    request<{ success: boolean; message: string; bookedAt: string }>(
+      `/bookings/${id}/board`,
+      { method: 'POST', body: JSON.stringify({ otp }) },
+    ),
 
   getMessages: (id: string) => request<ChatMessage[]>(`/bookings/${id}/messages`),
 

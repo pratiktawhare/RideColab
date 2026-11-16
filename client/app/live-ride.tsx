@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-// live-ride.tsx — Phase 9 Live Ride screen
+// live-ride.tsx — Phase 9 & Ride Polishing Live Ride screen
 // Connects Socket.io, shows real-time map, SOS, helmet check,
-// night rules check-in, deviation/long-stop alerts, share link
+// night rules check-in, deviation/long-stop alerts, share link,
+// boarding OTP verification, 1-tap turn-by-turn nav, & post-ride UPI
 // ─────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -9,6 +10,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  TextInput,
   Alert,
   Modal,
   ActivityIndicator,
@@ -60,13 +62,19 @@ export default function LiveRideScreen() {
   const [sharingLoading, setSharingLoading] = useState(false);
   const [sosLoading, setSosLoading] = useState(false);
 
-  // ── Modals ────────────────────────────────────────────────
+  // ── Modals & Actions ─────────────────────────────────────
   const [helmetModalVisible, setHelmetModalVisible] = useState(false);
   const [helmetChecked, setHelmetChecked] = useState(false);
   const [nightModalVisible, setNightModalVisible] = useState(false);
   const [nightChecked, setNightChecked] = useState(false);
   const [safeArrivalLoading, setSafeArrivalLoading] = useState(false);
   const [safeArrivalDone, setSafeArrivalDone] = useState(false);
+
+  // ── Ride Polishing additions ─────────────────────────────
+  const [otpModalVisible, setOtpModalVisible] = useState(false);
+  const [boardingOtpInput, setBoardingOtpInput] = useState('');
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [completeLoading, setCompleteLoading] = useState(false);
 
   const isMountedRef = useRef(true);
   const tripIdRef = useRef<string | null>(null);
@@ -109,6 +117,21 @@ export default function LiveRideScreen() {
         setLoading(false);
       });
   }, [bookingId, user?.gender, nightChecked]);
+
+  // Periodic status poll (every 15s) so state transitions (started, completed, boarded) sync
+  useEffect(() => {
+    if (!bookingId || booking?.status === 'completed') return;
+    const pollInterval = setInterval(() => {
+      bookingApi
+        .getById(bookingId)
+        .then((b) => {
+          if (isMountedRef.current) setBooking(b);
+        })
+        .catch(() => {});
+    }, 15000);
+
+    return () => clearInterval(pollInterval);
+  }, [bookingId, booking?.status]);
 
   // ── Resolve user's location for emitting ─────────────────
   const getMyLocation = useCallback(async () => {
@@ -208,7 +231,6 @@ export default function LiveRideScreen() {
     const offDev = onDeviationAlert((alert) => {
       if (!isMountedRef.current) return;
       setDeviationM(alert.deviationM);
-      // Auto-clear after 30s
       setTimeout(() => {
         if (isMountedRef.current) setDeviationM(null);
       }, 30_000);
@@ -254,13 +276,12 @@ export default function LiveRideScreen() {
                 loc?.lng,
               );
 
-              // Open SMS deep link for each emergency contact
               for (const contact of result.emergency_contacts) {
                 const smsUrl = `sms:${contact.phone}?body=SOS! I need help. I am on a RideColab trip. Please call me immediately.`;
                 const canOpen = await Linking.canOpenURL(smsUrl);
                 if (canOpen) {
                   await Linking.openURL(smsUrl);
-                  break; // open only first one
+                  break;
                 }
               }
 
@@ -329,12 +350,124 @@ export default function LiveRideScreen() {
     }
   }, [bookingId]);
 
+  // ── 1-Tap Turn-by-Turn Navigation (Rider) ─────────────────
+  const handleNavigate = useCallback(() => {
+    if (!booking) return;
+    // Route to passenger pickup first if not boarded, else destination
+    const targetLat = !booking.boarded_at && booking.pickup_lat != null ? booking.pickup_lat : booking.dest_lat;
+    const targetLng = !booking.boarded_at && booking.pickup_lng != null ? booking.pickup_lng : booking.dest_lng;
+    if (targetLat == null || targetLng == null) return;
+
+    const label = encodeURIComponent(
+      !booking.boarded_at && booking.pickup_landmark
+        ? booking.pickup_landmark
+        : booking.dest_label || 'Destination',
+    );
+    const dest = `${targetLat},${targetLng}`;
+    const geoUrl = `geo:${dest}?q=${dest}(${label})`;
+    const osmUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${booking.origin_lat}%2C${booking.origin_lng}%3B${targetLat}%2C${targetLng}`;
+
+    if (Platform.OS === 'android') {
+      Linking.canOpenURL(geoUrl)
+        .then((supported) => {
+          if (supported) return Linking.openURL(geoUrl);
+          return Linking.openURL(osmUrl);
+        })
+        .catch(() => Linking.openURL(osmUrl));
+    } else if (Platform.OS === 'ios') {
+      Linking.openURL(`maps://?daddr=${dest}&q=${label}`).catch(() => Linking.openURL(osmUrl));
+    } else {
+      Linking.openURL(osmUrl).catch(() => Alert.alert('Error', 'Could not open navigation.'));
+    }
+  }, [booking]);
+
+  // ── Verify Boarding OTP (Rider) ───────────────────────────
+  const handleVerifyOtp = useCallback(async () => {
+    if (!bookingId) return;
+    if (boardingOtpInput.trim().length !== 4) {
+      Alert.alert('Invalid OTP', 'Please enter the 4-digit code provided by your passenger.');
+      return;
+    }
+    setOtpVerifying(true);
+    try {
+      await bookingApi.verifyBoardingOtp(bookingId, boardingOtpInput.trim());
+      Alert.alert('Success ✅', 'Passenger boarding confirmed!');
+      setOtpModalVisible(false);
+      setBoardingOtpInput('');
+      const updated = await bookingApi.getById(bookingId);
+      setBooking(updated);
+    } catch (err) {
+      Alert.alert('Verification Failed', (err as Error).message ?? 'Invalid OTP code.');
+    } finally {
+      setOtpVerifying(false);
+    }
+  }, [bookingId, boardingOtpInput]);
+
+  // ── Complete Ride (Rider) ─────────────────────────────────
+  const handleCompleteRide = useCallback(() => {
+    if (!bookingId) return;
+    Alert.alert(
+      '🏁 Complete Ride?',
+      'This will mark the ride as finished and prompt passenger for direct fuel cost sharing.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete Ride',
+          onPress: async () => {
+            setCompleteLoading(true);
+            try {
+              const updated = await bookingApi.complete(bookingId);
+              setBooking(updated);
+              Alert.alert('🎉 Ride Completed', 'Trip completed successfully! Please rate your passenger.');
+            } catch (err) {
+              Alert.alert('Error', (err as Error).message ?? 'Could not complete ride.');
+            } finally {
+              setCompleteLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [bookingId]);
+
+  // ── UPI Direct Payment (Passenger) ────────────────────────
+  const doUpiPay = useCallback(() => {
+    if (!booking?.fare_share) return;
+    const upiId = booking.rider_upi?.trim();
+    if (!upiId) {
+      Alert.alert(
+        'Rider UPI ID Not Set',
+        `The rider has not added a UPI ID yet.\n\nPlease pay ₹${Number(booking.fare_share).toFixed(0)} in cash or scan their UPI QR code directly.`,
+        [
+          {
+            text: 'Simulate Demo Payment',
+            onPress: () =>
+              Alert.alert(
+                'Demo Payment Successful ✅',
+                `Simulated payment of ₹${Number(booking.fare_share).toFixed(0)} sent to ${booking.rider_name ?? 'Rider'}.`,
+              ),
+          },
+          { text: 'OK', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(booking.rider_name ?? 'Rider')}&am=${Number(booking.fare_share).toFixed(2)}&cu=INR&tn=${encodeURIComponent('RideColab fuel cost share')}`;
+    Linking.openURL(upiUrl).catch(() =>
+      Alert.alert(
+        'UPI App Not Found',
+        `Could not open UPI app.\n\nYou can manually send ₹${Number(booking.fare_share).toFixed(0)} to:\n\n${upiId}`,
+      ),
+    );
+  }, [booking]);
+
   // ─────────────────────────────────────────────────────────
   if (loading || !booking) {
     return (
       <View style={[styles.centered, { backgroundColor: c.background }]}>
         <ActivityIndicator size="large" color={c.accent} />
-        <Text style={[styles.loadingText, { color: c.textSecondary }]}>Loading ride…</Text>
+        <Text style={[styles.loadingText, { color: c.textSecondary }]}>Loading live ride…</Text>
       </View>
     );
   }
@@ -380,9 +513,6 @@ export default function LiveRideScreen() {
         }
       : null;
 
-  // Primary origin & destination for this participant's ride view
-  // Passenger: their ride is pickup → dropoff
-  // Rider: full trip origin → dest, with passenger pickup highlighted
   const primaryOrigin = isRider
     ? tripOrigin ?? passengerPickup
     : passengerPickup ?? tripOrigin;
@@ -415,6 +545,14 @@ export default function LiveRideScreen() {
             {!isRider && booking.rider_name ? ` • Rider: ${booking.rider_name}` : ''}
           </Text>
         </View>
+        {isRider && (
+          <TouchableOpacity
+            style={[styles.navHeaderBtn, { backgroundColor: c.accent }]}
+            onPress={handleNavigate}
+          >
+            <Text style={styles.navHeaderBtnText}>🗺️ Nav</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── Alert banners ── */}
@@ -452,12 +590,102 @@ export default function LiveRideScreen() {
         ) : null}
       </View>
 
-      {/* ── Action buttons ── */}
-      <View style={[styles.actions, { backgroundColor: c.surface, borderTopColor: c.border }]}>
-        {/* SOS — always visible during active ride */}
-        {!isCompleted ? (
+      {/* ── Passenger Boarding Pass Card ── */}
+      {!isRider && !isCompleted && (
+        <View style={[styles.boardingCard, { backgroundColor: c.surface, borderColor: c.border }]}>
+          {!booking.boarded_at ? (
+            <View>
+              <View style={styles.boardingHeaderRow}>
+                <View>
+                  <Text style={[styles.boardingCardSub, { color: c.textSecondary }]}>YOUR BOARDING PASS</Text>
+                  <Text style={[styles.boardingCardTitle, { color: c.text }]}>Share OTP with Driver</Text>
+                </View>
+                <View style={[styles.otpBadge, { backgroundColor: c.accent + '20', borderColor: c.accent }]}>
+                  <Text style={[styles.otpBadgeText, { color: c.accent }]}>
+                    {booking.boarding_otp ?? '----'}
+                  </Text>
+                </View>
+              </View>
+              {booking.pickup_landmark ? (
+                <Text style={[styles.pickupNote, { color: c.textSecondary }]}>
+                  📍 Meeting point:{' '}
+                  <Text style={{ fontWeight: '700', color: c.text }}>{booking.pickup_landmark}</Text>
+                  {booking.walking_distance_m != null ? ` (${booking.walking_distance_m}m walk)` : ''}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.boardedRow}>
+              <Text style={styles.boardedText}>✅ Boarded successfully</Text>
+              {booking.fare_share != null && (
+                <Text style={[styles.fareNote, { color: c.textSecondary }]}>
+                  Fare: ₹{Number(booking.fare_share).toFixed(0)}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── Post-Trip Completion Panel (if completed) ── */}
+      {isCompleted && (
+        <View style={[styles.completedCard, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <Text style={styles.completedEmoji}>🏁</Text>
+          <Text style={[styles.completedTitle, { color: c.text }]}>Ride Completed!</Text>
+          <Text style={[styles.completedSub, { color: c.textSecondary }]}>
+            {!isRider
+              ? `You've arrived! Please settle ₹${Number(booking.fare_share ?? 0).toFixed(0)} directly with ${booking.rider_name ?? 'your driver'}.`
+              : 'Thank you for sharing your ride and keeping Pune moving!'}
+          </Text>
+
+          <View style={styles.completedActions}>
+            {!isRider && booking.fare_share != null && (
+              <TouchableOpacity
+                style={[styles.compActionBtn, { backgroundColor: '#10B981' }]}
+                onPress={doUpiPay}
+              >
+                <Text style={styles.compActionBtnText}>
+                  💸 Pay ₹{Number(booking.fare_share).toFixed(0)} via UPI
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.compActionBtn, { backgroundColor: c.accent }]}
+              onPress={() =>
+                router.replace({
+                  pathname: '/rate-ride',
+                  params: {
+                    bookingId: booking.id,
+                    revieweeName: isRider ? booking.passenger_name ?? 'Passenger' : booking.rider_name ?? 'Rider',
+                    revieweeRole: isRider ? 'passenger' : 'rider',
+                  },
+                })
+              }
+            >
+              <Text style={styles.compActionBtnText}>
+                ⭐ Rate {isRider ? 'Passenger' : 'Driver'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.compActionBtnSecondary]}
+              onPress={() => router.replace('/(tabs)/activity')}
+            >
+              <Text style={[styles.compActionBtnSecondaryText, { color: c.textSecondary }]}>
+                Done • Back to Activity
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ── Bottom Action Bar (during active ride) ── */}
+      {!isCompleted && (
+        <View style={[styles.actions, { backgroundColor: c.surface, borderTopColor: c.border }]}>
+          {/* SOS — always visible during active ride */}
           <TouchableOpacity
-            style={[styles.sosBtn]}
+            style={styles.sosBtn}
             onPress={handleSos}
             disabled={sosLoading}
           >
@@ -467,44 +695,125 @@ export default function LiveRideScreen() {
               <Text style={styles.sosBtnText}>🚨 SOS</Text>
             )}
           </TouchableOpacity>
-        ) : null}
 
-        {/* Share link — rider only */}
-        {isRider && !isCompleted ? (
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: c.accent }]}
-            onPress={handleShare}
-            disabled={sharingLoading}
-          >
-            {sharingLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.actionBtnText}>🔗 Share</Text>
-            )}
-          </TouchableOpacity>
-        ) : null}
+          {/* Rider: Boarding OTP check if not yet boarded */}
+          {isRider && !booking.boarded_at && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: c.accent }]}
+              onPress={() => setOtpModalVisible(true)}
+            >
+              <Text style={styles.actionBtnText}>🔑 Verify OTP</Text>
+            </TouchableOpacity>
+          )}
 
-        {/* Safe arrival — passenger only, once ride started */}
-        {!isRider && booking.status === 'started' && !safeArrivalDone ? (
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: c.primary }]}
-            onPress={handleSafeArrival}
-            disabled={safeArrivalLoading}
-          >
-            {safeArrivalLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.actionBtnText}>✅ Safe Arrival</Text>
-            )}
-          </TouchableOpacity>
-        ) : null}
+          {/* Rider: 1-tap Navigation */}
+          {isRider && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: c.primary }]}
+              onPress={handleNavigate}
+            >
+              <Text style={styles.actionBtnText}>🗺️ Navigate</Text>
+            </TouchableOpacity>
+          )}
 
-        {safeArrivalDone ? (
-          <View style={[styles.actionBtn, { backgroundColor: '#10b981' }]}>
-            <Text style={styles.actionBtnText}>✅ Arrival Logged</Text>
+          {/* Rider: Complete ride */}
+          {isRider && booking.status === 'started' && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
+              onPress={handleCompleteRide}
+              disabled={completeLoading}
+            >
+              {completeLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>🏁 Finish</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Rider: Share link */}
+          {isRider && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#6B7280' }]}
+              onPress={handleShare}
+              disabled={sharingLoading}
+            >
+              {sharingLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>🔗 Share</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Passenger: Safe arrival */}
+          {!isRider && booking.status === 'started' && !safeArrivalDone && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: c.primary }]}
+              onPress={handleSafeArrival}
+              disabled={safeArrivalLoading}
+            >
+              {safeArrivalLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>✅ Safe Arrival</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {safeArrivalDone && (
+            <View style={[styles.actionBtn, { backgroundColor: '#10b981' }]}>
+              <Text style={styles.actionBtnText}>✅ Logged</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── Driver OTP Verification Modal ── */}
+      <Modal visible={otpModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: c.surface }]}>
+            <Text style={[styles.modalTitle, { color: c.text }]}>🔑 Verify Passenger Boarding</Text>
+            <Text style={[styles.modalBody, { color: c.textSecondary }]}>
+              Ask {booking.passenger_name ?? 'the passenger'} for their 4-digit boarding OTP to confirm pickup.
+            </Text>
+            <TextInput
+              style={[
+                styles.otpInput,
+                {
+                  color: c.text,
+                  borderColor: c.border,
+                  backgroundColor: c.background,
+                },
+              ]}
+              placeholder="4-digit OTP"
+              placeholderTextColor={c.textSecondary}
+              keyboardType="number-pad"
+              maxLength={4}
+              value={boardingOtpInput}
+              onChangeText={setBoardingOtpInput}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: c.accent }]}
+              onPress={handleVerifyOtp}
+              disabled={otpVerifying || boardingOtpInput.length !== 4}
+            >
+              {otpVerifying ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalBtnText}>Confirm Boarding</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalBtnSecondary}
+              onPress={() => setOtpModalVisible(false)}
+            >
+              <Text style={[styles.modalBtnSecondaryText, { color: c.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
           </View>
-        ) : null}
-      </View>
+        </View>
+      </Modal>
 
       {/* ── Helmet Check Modal ── */}
       <Modal visible={helmetModalVisible} transparent animationType="slide">
@@ -513,7 +822,7 @@ export default function LiveRideScreen() {
             <Text style={[styles.modalTitle, { color: c.text }]}>🪖 Helmet Check</Text>
             <Text style={[styles.modalBody, { color: c.textSecondary }]}>
               Safety first! Please confirm that all riders are wearing helmets before starting
-              the ride. This is mandatory for bike trips.
+              the ride. This is mandatory for two-wheeler trips.
             </Text>
             <TouchableOpacity
               style={[styles.modalBtn, { backgroundColor: c.accent }]}
@@ -522,7 +831,7 @@ export default function LiveRideScreen() {
               <Text style={styles.modalBtnText}>✅ Confirmed — Helmets On</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modalBtnSecondary]}
+              style={styles.modalBtnSecondary}
               onPress={() => setHelmetModalVisible(false)}
             >
               <Text style={[styles.modalBtnSecondaryText, { color: c.textSecondary }]}>
@@ -584,6 +893,12 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1 },
   headerTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   headerSub: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
+  navHeaderBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  navHeaderBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   alertBanner: {
     paddingVertical: 10,
@@ -609,22 +924,82 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
+  // ── Boarding Card ──
+  boardingCard: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  boardingHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  boardingCardSub: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  boardingCardTitle: { fontSize: 14, fontWeight: '700', marginTop: 2 },
+  otpBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  otpBadgeText: { fontSize: 20, fontWeight: '900', letterSpacing: 4 },
+  pickupNote: { fontSize: 12, marginTop: 8 },
+  boardedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  boardedText: { color: '#10B981', fontWeight: '700', fontSize: 14 },
+  fareNote: { fontSize: 13, fontWeight: '600' },
+
+  // ── Completed Card ──
+  completedCard: {
+    padding: 24,
+    marginHorizontal: 16,
+    marginBottom: 24,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  completedEmoji: { fontSize: 44, marginBottom: 8 },
+  completedTitle: { fontSize: 20, fontWeight: '800', marginBottom: 6 },
+  completedSub: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 18 },
+  completedActions: { width: '100%', gap: 10 },
+  compActionBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compActionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  compActionBtnSecondary: { paddingVertical: 10, alignItems: 'center' },
+  compActionBtnSecondaryText: { fontSize: 14, fontWeight: '600' },
+
+  // ── Actions ──
   actions: {
     flexDirection: 'row',
     padding: 12,
-    gap: 10,
+    gap: 8,
     borderTopWidth: 1,
     paddingBottom: 28,
   },
   sosBtn: {
-    flex: 1,
+    flex: 0.9,
     backgroundColor: '#EF4444',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sosBtnText: { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 0.5 },
+  sosBtnText: { color: '#fff', fontWeight: '800', fontSize: 15, letterSpacing: 0.5 },
   actionBtn: {
     flex: 1,
     borderRadius: 12,
@@ -632,8 +1007,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
+  // ── Modals ──
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -647,6 +1023,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20, fontWeight: '800' },
   modalBody: { fontSize: 14, lineHeight: 22 },
+  otpInput: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    fontSize: 26,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 8,
+    paddingVertical: 12,
+  },
   modalBtn: {
     borderRadius: 12,
     paddingVertical: 14,

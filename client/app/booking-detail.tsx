@@ -44,6 +44,8 @@ export default function BookingDetailScreen() {
   const [actionLoading, setActionLoading] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [showCancelInput, setShowCancelInput] = useState(false);
+  const [boardingOtpInput, setBoardingOtpInput] = useState('');
+  const [boardingLoading, setBoardingLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const isRider = booking?.rider_id === user?.id;
@@ -140,6 +142,25 @@ export default function BookingDetailScreen() {
         },
       },
     ]);
+  };
+
+  const doVerifyBoardingOtp = async () => {
+    if (!booking) return;
+    if (boardingOtpInput.trim().length !== 4) {
+      Alert.alert('Invalid OTP', 'Please enter the 4-digit code provided by the passenger.');
+      return;
+    }
+    setBoardingLoading(true);
+    try {
+      await bookingApi.verifyBoardingOtp(booking.id, boardingOtpInput.trim());
+      Alert.alert('Success', 'Passenger boarding confirmed!');
+      await loadBooking(true);
+      setBoardingOtpInput('');
+    } catch (err) {
+      Alert.alert('Verification Failed', (err as Error).message ?? 'Invalid OTP');
+    } finally {
+      setBoardingLoading(false);
+    }
   };
 
   const doCancel = async () => {
@@ -349,6 +370,59 @@ export default function BookingDetailScreen() {
                 <TouchableOpacity style={[styles.upiBtn, { backgroundColor: '#10B981' }]} onPress={doUpiPay}>
                   <Text style={styles.upiBtnText}>💸 Pay via UPI</Text>
                 </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* ── Boarding OTP (Passenger View) ── */}
+          {isPassenger && ['accepted', 'started'].includes(booking.status) && booking.boarding_otp && (
+            <View style={[styles.card, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>
+                🔑 Your Boarding OTP
+              </Text>
+              <Text style={{ fontSize: 32, fontWeight: '900', color: '#15803D', letterSpacing: 6, marginVertical: 4 }}>
+                {booking.boarding_otp}
+              </Text>
+              <Text style={{ fontSize: 12, color: '#166534' }}>
+                Share this 4-digit code with {booking.rider_name ?? 'your driver'} when you board.
+              </Text>
+            </View>
+          )}
+
+          {/* ── Boarding Verification (Rider View) ── */}
+          {isRider && ['accepted', 'started'].includes(booking.status) && (
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Text style={[styles.cardTitle, { color: c.text }]}>Boarding Verification</Text>
+              {booking.boarded_at ? (
+                <View style={{ backgroundColor: '#D1FAE5', padding: 12, borderRadius: 8 }}>
+                  <Text style={{ color: '#065F46', fontWeight: '700', fontSize: 13, textAlign: 'center' }}>
+                    ✅ Boarding Confirmed ({new Date(booking.boarded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })})
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 13, color: c.textSecondary }}>
+                    Enter the 4-digit code provided by {booking.passenger_name ?? 'passenger'} when they board:
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TextInput
+                      style={[styles.codeInput, { borderColor: c.border, color: c.text, backgroundColor: c.inputBg, flex: 1, letterSpacing: 4, textAlign: 'center', fontSize: 18, fontWeight: '700' }]}
+                      value={boardingOtpInput}
+                      onChangeText={setBoardingOtpInput}
+                      placeholder="0000"
+                      placeholderTextColor={c.textMuted}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                    />
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#10B981', paddingHorizontal: 16 }]}
+                      onPress={doVerifyBoardingOtp}
+                      disabled={boardingLoading}
+                    >
+                      {boardingLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>Verify</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
               )}
             </View>
           )}

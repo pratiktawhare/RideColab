@@ -4,9 +4,52 @@
 import { query, withTransaction } from '~/db/pool';
 import { logger } from '~/utils/logger';
 import { calculateFareCap, getConfig } from '~/services/fare';
+import { getRoute } from '~/services/routing';
 
 export type { FareCap } from '~/services/fare';
 export { calculateFareCap };
+
+export interface SuggestedStopover {
+  name: string;
+  label: string;
+  lat: number;
+  lng: number;
+  category: string;
+  position_fraction: number;
+}
+
+// ── Suggest popular landmarks along route as stopovers ────────
+export async function getSuggestedStopovers(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+): Promise<SuggestedStopover[]> {
+  const route = await getRoute(originLat, originLng, destLat, destLng);
+  if (!route || !route.route_wkt) return [];
+
+  const res = await query<SuggestedStopover>(
+    `SELECT name,
+            name AS label,
+            ST_Y(location::geometry) AS lat,
+            ST_X(location::geometry) AS lng,
+            category,
+            ROUND(ST_LineLocatePoint(ST_GeomFromText($1, 4326), location::geometry)::numeric, 3) AS position_fraction
+     FROM landmarks
+     WHERE ST_DWithin(
+             location,
+             ST_GeogFromText($1),
+             500
+           )
+       AND ST_Distance(location, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography) > 1000
+       AND ST_Distance(location, ST_SetSRID(ST_MakePoint($5, $4), 4326)::geography) > 1000
+     ORDER BY ST_LineLocatePoint(ST_GeomFromText($1, 4326), location::geometry)
+     LIMIT 5`,
+    [route.route_wkt, originLat, originLng, destLat, destLng],
+  );
+
+  return res.rows;
+}
 
 // calculateFareCap and getConfig are imported from ~/services/fare
 

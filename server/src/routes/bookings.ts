@@ -14,6 +14,7 @@ import {
   startRide,
   completeRide,
   generateRideCodeForBooking,
+  verifyBoardingOtp,
 } from '~/services/bookings';
 import { registerPushToken } from '~/services/notifications';
 import { logHelmetCheck, logSafeArrival } from '~/services/safety';
@@ -23,14 +24,19 @@ router.use(authenticate);
 
 // ── Validation schemas ────────────────────────────────────────
 const CreateBookingSchema = z.object({
-  trip_id:       z.string().uuid(),
-  seats_booked:  z.number().int().min(1).max(6).default(1),
-  pickup_label:  z.string().optional(),
-  pickup_lat:    z.number().optional(),
-  pickup_lng:    z.number().optional(),
-  dropoff_label: z.string().optional(),
-  dropoff_lat:   z.number().optional(),
-  dropoff_lng:   z.number().optional(),
+  trip_id:             z.string().uuid(),
+  seats_booked:        z.number().int().min(1).max(6).default(1),
+  pickup_label:        z.string().optional(),
+  pickup_lat:          z.number().optional(),
+  pickup_lng:          z.number().optional(),
+  dropoff_label:       z.string().optional(),
+  dropoff_lat:         z.number().optional(),
+  dropoff_lng:         z.number().optional(),
+  pickup_landmark:     z.string().optional(),
+  dropoff_landmark:    z.string().optional(),
+  walking_distance_m:  z.number().int().optional(),
+  sub_leg_distance_km: z.number().optional(),
+  fare_share:          z.number().optional(),
 });
 
 const SendMessageSchema = z.object({
@@ -46,13 +52,18 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = CreateBookingSchema.parse(req.body);
     const booking = await createBooking(req.user!.sub, data.trip_id, {
-      seatsBooked:  data.seats_booked,
-      pickupLabel:  data.pickup_label,
-      pickupLat:    data.pickup_lat,
-      pickupLng:    data.pickup_lng,
-      dropoffLabel: data.dropoff_label,
-      dropoffLat:   data.dropoff_lat,
-      dropoffLng:   data.dropoff_lng,
+      seatsBooked:      data.seats_booked,
+      pickupLabel:      data.pickup_label,
+      pickupLat:        data.pickup_lat,
+      pickupLng:        data.pickup_lng,
+      dropoffLabel:     data.dropoff_label,
+      dropoffLat:       data.dropoff_lat,
+      dropoffLng:       data.dropoff_lng,
+      pickupLandmark:   data.pickup_landmark,
+      dropoffLandmark:  data.dropoff_landmark,
+      walkingDistanceM: data.walking_distance_m,
+      subLegDistanceKm: data.sub_leg_distance_km,
+      fareShare:        data.fare_share,
     });
     res.status(201).json({ success: true, data: booking });
   } catch (err) {
@@ -155,6 +166,17 @@ router.post('/:id/complete', async (req: Request, res: Response, next: NextFunct
   try {
     const booking = await completeRide(req.params['id']!, req.user!.sub);
     res.json({ success: true, data: booking });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /bookings/:id/board — verify passenger boarding OTP ──
+router.post('/:id/board', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { otp } = z.object({ otp: z.string().min(4).max(4) }).parse(req.body);
+    const result = await verifyBoardingOtp(req.params['id']!, req.user!.sub, otp);
+    res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }

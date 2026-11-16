@@ -2,9 +2,10 @@
 // Geocoding service
 // ─────────────────────────────────────────────────────────────
 // Strategy:
-//  1. Fuzzy-match query against landmarks table (DB, 0 ORS calls).
-//  2. If no landmark match → ORS Geocode (max 1,000/day).
-//  3. Cache ORS results in geocoding_cache for 24 h by SHA-256 hash.
+//  1. Check geocoding_cache for active queries (24 h TTL by SHA-256 hash).
+//  2. If cache miss → ORS Geocode API (Pune-focused, live coordinates).
+//  3. If ORS unavailable, offline, or returns empty → fallback to landmarks table.
+//  4. For empty queries, getAllLandmarks() provides instant quick-pick chips.
 // ─────────────────────────────────────────────────────────────
 import crypto from 'crypto';
 import { query } from '~/db/pool';
@@ -88,59 +89,74 @@ async function geocodeWithORS(q: string): Promise<GeoResult[]> {
 
   // Check ORS API key
   if (!env.ORS_API_KEY) {
-    logger.warn('ORS_API_KEY not set — skipping ORS geocoding fallback');
+    logger.warn('ORS_API_KEY not set — skipping ORS geocoding');
     return [];
   }
 
-  // Call ORS
-  const url = `https://api.openrouteservice.org/geocode/search?api_key=${env.ORS_API_KEY}&text=${encodeURIComponent(q)}&boundary.country=IN&size=5`;
+  // Call ORS with Pune center focus bias (18.5204, 73.8567)
+  const url = `https://api.openrouteservice.org/geocode/search?api_key=${env.ORS_API_KEY}&text=${encodeURIComponent(q)}&boundary.country=IN&size=5&focus.point.lat=18.5204&focus.point.lon=73.8567`;
   logger.info({ q }, 'calling ORS geocoding');
 
-  const response = await fetch(url, {
-    headers: { 'Accept': 'application/json' },
-    signal: AbortSignal.timeout(5000),
-  });
+  try {
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
 
-  if (!response.ok) {
-    logger.error({ status: response.status, q }, 'ORS geocoding failed');
+    if (!response.ok) {
+      logger.error({ status: response.status, q }, 'ORS geocoding failed');
+      return [];
+    }
+
+    const data = await response.json() as {
+      features?: Array<{
+        geometry: { coordinates: [number, number] };
+        properties: { label: string };
+      }>;
+    };
+
+    const results: GeoResult[] = (data.features || []).map((f) => ({
+      label: f.properties.label,
+      lat: f.geometry.coordinates[1],
+      lng: f.geometry.coordinates[0],
+      source: 'ors' as const,
+    }));
+
+    if (results.length > 0) {
+      // Cache for 24 h
+      await query(
+        `INSERT INTO geocoding_cache (query_hash, query_text, results, expires_at)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours')
+         ON CONFLICT (query_hash) DO UPDATE
+         SET results = $3, expires_at = NOW() + INTERVAL '24 hours'`,
+        [hash, q, JSON.stringify(results)],
+      );
+    }
+
+    return results;
+  } catch (err) {
+    logger.warn({ err, q }, 'ORS geocoding request failed or timed out — using fallback');
     return [];
   }
-
-  const data = await response.json() as {
-    features: Array<{
-      geometry: { coordinates: [number, number] };
-      properties: { label: string };
-    }>;
-  };
-
-  const results: GeoResult[] = data.features.map((f) => ({
-    label: f.properties.label,
-    lat: f.geometry.coordinates[1],
-    lng: f.geometry.coordinates[0],
-    source: 'ors' as const,
-  }));
-
-  // Cache for 24 h
-  await query(
-    `INSERT INTO geocoding_cache (query_hash, query_text, results, expires_at)
-     VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours')
-     ON CONFLICT (query_hash) DO UPDATE
-     SET results = $3, expires_at = NOW() + INTERVAL '24 hours'`,
-    [hash, q, JSON.stringify(results)],
-  );
-
-  return results;
 }
 
-// ── Main search: landmarks first, ORS fallback ─────────────────
+// ── Main search: live ORS (with cache) first, DB landmarks fallback ─────────────────
 export async function geocodeSearch(q: string): Promise<GeoResult[]> {
   if (!q || q.trim().length < 2) return [];
 
+  // 1. Try live geocoding (checks geocoding_cache first, then live ORS API)
+  const liveResults = await geocodeWithORS(q);
+  if (liveResults.length > 0) {
+    logger.debug({ q, count: liveResults.length }, 'geocoding served from live ORS / cache');
+    return liveResults;
+  }
+
+  // 2. Fallback to DB landmarks if ORS is offline, rate-limited, or returns no results
   const landmarks = await searchLandmarks(q);
   if (landmarks.length > 0) {
-    logger.debug({ q, count: landmarks.length }, 'geocoding served from landmarks');
+    logger.debug({ q, count: landmarks.length }, 'geocoding fallback served from landmarks');
     return landmarks;
   }
 
-  return geocodeWithORS(q);
+  return [];
 }

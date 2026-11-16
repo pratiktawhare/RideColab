@@ -3,29 +3,39 @@ import { z } from 'zod';
 import { authenticate } from '~/middleware/authenticate';
 import { query, withTransaction } from '~/db/pool';
 import { getRoute } from '~/services/routing';
-import { calculateFareCap, checkWeeklyLimit, incrementWeeklyTrips } from '~/services/trips';
+import { calculateFareCap, checkWeeklyLimit, incrementWeeklyTrips, getSuggestedStopovers } from '~/services/trips';
 import { checkPostingSuspended } from '~/services/bookings';
 import { logger } from '~/utils/logger';
 
 const router = Router();
 
 // ── Validation schemas ─────────────────────────────────────────
+const StopoverSchema = z.object({
+  order:           z.number().int().min(1),
+  label:           z.string().min(1),
+  lat:             z.number().min(-90).max(90),
+  lng:             z.number().min(-180).max(180),
+  est_offset_mins: z.number().optional(),
+});
+
 const CreateTripSchema = z.object({
-  origin_label:  z.string().min(1),
-  origin_lat:    z.number().min(-90).max(90),
-  origin_lng:    z.number().min(-180).max(180),
-  dest_label:    z.string().min(1),
-  dest_lat:      z.number().min(-90).max(90),
-  dest_lng:      z.number().min(-180).max(180),
-  depart_at:     z.string().datetime({ offset: true }).or(z.string().min(1)), // ISO string
-  seats_total:   z.number().int().min(1).max(6),
-  fare_set:      z.number().min(0),
-  vehicle_id:    z.string().uuid(),
-  community_id:  z.string().uuid().optional(),
-  is_recurring:  z.boolean().default(false),
-  rrule:         z.string().optional(),
-  notes:         z.string().max(500).optional(),
-  is_women_only: z.boolean().default(false),
+  origin_label:      z.string().min(1),
+  origin_lat:        z.number().min(-90).max(90),
+  origin_lng:        z.number().min(-180).max(180),
+  dest_label:        z.string().min(1),
+  dest_lat:          z.number().min(-90).max(90),
+  dest_lng:          z.number().min(-180).max(180),
+  depart_at:         z.string().datetime({ offset: true }).or(z.string().min(1)), // ISO string
+  seats_total:       z.number().int().min(1).max(6),
+  fare_set:          z.number().min(0),
+  vehicle_id:        z.string().uuid(),
+  community_id:      z.string().uuid().optional(),
+  is_recurring:      z.boolean().default(false),
+  rrule:             z.string().optional(),
+  notes:             z.string().max(500).optional(),
+  is_women_only:     z.boolean().default(false),
+  stopovers:         z.array(StopoverSchema).optional().default([]),
+  corridor_radius_m: z.number().int().min(500).max(5000).optional().default(1500),
 });
 
 const UpdateTripSchema = z.object({
@@ -132,8 +142,14 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
       return;
     }
 
-    // 3. Get route (cache-first)
-    const route = await getRoute(data.origin_lat, data.origin_lng, data.dest_lat, data.dest_lng);
+    // 3. Get route (cache-first; accepts intermediate stopovers)
+    const route = await getRoute(
+      data.origin_lat,
+      data.origin_lng,
+      data.dest_lat,
+      data.dest_lng,
+      data.stopovers,
+    );
     if (!route) {
       res.status(422).json({
         success: false,
@@ -171,12 +187,14 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           route, distance_m, duration_s,
           depart_at, seats_total, seats_available,
           fare_set, fare_cap, status,
-          community_id, is_recurring, rrule, notes, is_women_only
+          community_id, is_recurring, rrule, notes, is_women_only,
+          stopovers, corridor_radius_m
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
           ST_GeogFromText($9),$10,$11,
           $12,$13,$13,$14,$15,'open',
-          $16,$17,$18,$19,$20
+          $16,$17,$18,$19,$20,
+          $21,$22
         ) RETURNING id`,
         [
           riderId,
@@ -199,6 +217,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           data.rrule ?? null,
           data.notes ?? null,
           data.is_women_only,
+          JSON.stringify(data.stopovers),
+          data.corridor_radius_m,
         ],
       );
 
@@ -217,6 +237,45 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         fare_estimate: fareData,
         route_source: route.source,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /trips/suggest-stopovers:
+ *   get:
+ *     summary: Suggest popular landmarks along route as stopovers
+ *     tags: [Trips]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/suggest-stopovers', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      origin_lat: z.coerce.number().min(-90).max(90),
+      origin_lng: z.coerce.number().min(-180).max(180),
+      dest_lat:   z.coerce.number().min(-90).max(90),
+      dest_lng:   z.coerce.number().min(-180).max(180),
+    });
+
+    const parsed = schema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Invalid coordinates', details: parsed.error.flatten() },
+      });
+      return;
+    }
+
+    const { origin_lat, origin_lng, dest_lat, dest_lng } = parsed.data;
+    const stopovers = await getSuggestedStopovers(origin_lat, origin_lng, dest_lat, dest_lng);
+
+    res.json({
+      success: true,
+      data: stopovers,
     });
   } catch (err) {
     next(err);

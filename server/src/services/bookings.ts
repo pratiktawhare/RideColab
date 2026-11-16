@@ -22,6 +22,12 @@ export interface BookingRow {
   dropoff_label: string | null;
   dropoff_lat: number | null;
   dropoff_lng: number | null;
+  pickup_landmark?: string | null;
+  dropoff_landmark?: string | null;
+  walking_distance_m?: number | null;
+  sub_leg_distance_km?: number | null;
+  boarding_otp?: string | null;
+  boarded_at?: string | null;
   fare_share: number | null;
   ride_code: string | null;
   created_at: string;
@@ -46,6 +52,7 @@ export interface BookingRow {
   vehicle_make: string;
   vehicle_model: string;
   plate_number: string;
+  stopovers?: Array<{ order: number; label: string; lat: number; lng: number }>;
 }
 
 // ── Ride code generator ───────────────────────────────────────
@@ -70,6 +77,11 @@ export async function createBooking(
     dropoffLabel?: string;
     dropoffLat?: number;
     dropoffLng?: number;
+    pickupLandmark?: string;
+    dropoffLandmark?: string;
+    walkingDistanceM?: number;
+    subLegDistanceKm?: number;
+    fareShare?: number;
   },
 ): Promise<BookingRow> {
   return withTransaction(async (client) => {
@@ -127,8 +139,11 @@ export async function createBooking(
       });
     }
 
-    // Compute fare share: fare_set / (1 + seats_booked)
-    const fareShare = +(trip.fare_set / (1 + opts.seatsBooked)).toFixed(2);
+    // Compute fare share: pro-rata if provided, otherwise standard full trip share
+    const fullTripShare = +(trip.fare_set / (1 + opts.seatsBooked)).toFixed(2);
+    const fareShare = opts.fareShare != null
+      ? Math.min(opts.fareShare, fullTripShare)
+      : fullTripShare;
 
     // Fallback to trip's origin / destination if passenger did not provide custom coordinates
     const pickupLabel = opts.pickupLabel ?? trip.origin_label;
@@ -138,20 +153,25 @@ export async function createBooking(
     const dropoffLat = opts.dropoffLat ?? trip.dest_lat;
     const dropoffLng = opts.dropoffLng ?? trip.dest_lng;
 
-    // Insert booking
+    // Insert booking (trigger generates 4-digit boarding_otp automatically)
     const bookRes = await client.query<{ id: string }>(
       `INSERT INTO bookings
          (trip_id, passenger_id, status, seats_booked,
           pickup_label, pickup_lat, pickup_lng,
           dropoff_label, dropoff_lat, dropoff_lng,
-          fare_share)
-       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10)
+          fare_share, pickup_landmark, dropoff_landmark,
+          walking_distance_m, sub_leg_distance_km)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id`,
       [
         tripId, passengerId, opts.seatsBooked,
         pickupLabel, pickupLat, pickupLng,
         dropoffLabel, dropoffLat, dropoffLng,
         fareShare,
+        opts.pickupLandmark ?? null,
+        opts.dropoffLandmark ?? null,
+        opts.walkingDistanceM ?? 0,
+        opts.subLegDistanceKm ?? null,
       ],
     );
 
@@ -190,6 +210,7 @@ export async function getBookingById(
             t.rider_id,
             t.origin_label, t.dest_label, t.depart_at,
             t.origin_lat, t.origin_lng, t.dest_lat, t.dest_lng,
+            COALESCE(t.stopovers, '[]'::jsonb) AS stopovers,
             ST_AsGeoJSON(t.route) AS route_geojson,
             u.name AS rider_name,
             u.upi_id AS rider_upi,
@@ -219,6 +240,7 @@ export async function getMyBookings(userId: string): Promise<BookingRow[]> {
             t.rider_id,
             t.origin_label, t.dest_label, t.depart_at,
             t.origin_lat, t.origin_lng, t.dest_lat, t.dest_lng,
+            COALESCE(t.stopovers, '[]'::jsonb) AS stopovers,
             ST_AsGeoJSON(t.route) AS route_geojson,
             u.name AS rider_name,
             u.upi_id AS rider_upi,
@@ -239,6 +261,62 @@ export async function getMyBookings(userId: string): Promise<BookingRow[]> {
     [userId],
   );
   return res.rows;
+}
+
+// ── Verify passenger boarding OTP (rider only) ────────────────
+export async function verifyBoardingOtp(
+  bookingId: string,
+  riderId: string,
+  otp: string,
+): Promise<{ success: boolean; message: string; bookedAt: string }> {
+  const res = await query<{
+    id: string;
+    rider_id: string;
+    status: string;
+    boarding_otp: string;
+    passenger_id: string;
+  }>(
+    `SELECT b.id, t.rider_id, b.status, b.boarding_otp, b.passenger_id
+     FROM bookings b
+     JOIN trips t ON b.trip_id = t.id
+     WHERE b.id = $1`,
+    [bookingId],
+  );
+
+  if (res.rows.length === 0) {
+    throw Object.assign(new Error('Booking not found'), { code: 'BOOKING_NOT_FOUND', status: 404 });
+  }
+
+  const b = res.rows[0]!;
+  if (b.rider_id !== riderId) {
+    throw Object.assign(new Error('Only the driver can verify boarding'), { code: 'UNAUTHORIZED', status: 403 });
+  }
+
+  if (b.status !== 'accepted' && b.status !== 'started') {
+    throw Object.assign(new Error(`Cannot board booking in '${b.status}' state`), { code: 'INVALID_STATUS', status: 400 });
+  }
+
+  if (!b.boarding_otp || b.boarding_otp.trim() !== otp.trim()) {
+    throw Object.assign(new Error('Incorrect boarding OTP. Please check the 4-digit code with the passenger.'), { code: 'INVALID_OTP', status: 400 });
+  }
+
+  const updated = await query<{ boarded_at: Date }>(
+    `UPDATE bookings SET boarded_at = NOW() WHERE id = $1 RETURNING boarded_at`,
+    [bookingId],
+  );
+
+  sendPushToUser(
+    b.passenger_id,
+    '🚗 Boarding Confirmed',
+    'Your boarding has been confirmed by the rider. Have a safe journey!',
+    { bookingId, screen: 'live-ride' },
+  ).catch(() => {});
+
+  return {
+    success: true,
+    message: 'Boarding verified successfully',
+    bookedAt: updated.rows[0]?.boarded_at?.toISOString() ?? new Date().toISOString(),
+  };
 }
 
 // ── Accept booking (rider only) ───────────────────────────────
