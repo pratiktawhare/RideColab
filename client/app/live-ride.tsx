@@ -3,6 +3,7 @@
 // Connects Socket.io, shows real-time map, SOS, helmet check,
 // night rules check-in, deviation/long-stop alerts, share link,
 // boarding OTP verification, 1-tap turn-by-turn nav, & post-ride UPI
+// Supports both bookingId (passenger) and tripId (rider/passenger)
 // ─────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -21,7 +22,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAuthStore } from '@/store/authStore';
-import { bookingApi, liveApi, LiveLocationPoint } from '@/services/api';
+import { bookingApi, liveApi, tripsApi, LiveLocationPoint } from '@/services/api';
 import type { Booking } from '@/services/api';
 import {
   connectSocket,
@@ -45,7 +46,10 @@ const LiveRideMap =
 // ─────────────────────────────────────────────────────────────
 
 export default function LiveRideScreen() {
-  const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
+  const params = useLocalSearchParams<{ bookingId?: string; tripId?: string }>();
+  const bookingIdParam = params.bookingId;
+  const tripIdParam = params.tripId;
+
   const router = useRouter();
   const { user, accessToken } = useAuthStore();
   const { theme } = useThemeStore();
@@ -79,59 +83,167 @@ export default function LiveRideScreen() {
   const isMountedRef = useRef(true);
   const tripIdRef = useRef<string | null>(null);
 
-  // ── Load booking ──────────────────────────────────────────
-  useEffect(() => {
-    if (!bookingId) return;
-    bookingApi
-      .getById(bookingId)
-      .then((b) => {
-        if (!isMountedRef.current) return;
-        setBooking(b);
-        setLoading(false);
-        tripIdRef.current = b.trip_id;
+  // ── Setup live tracking state ─────────────────────────────
+  const setupLiveForRide = useCallback(
+    (targetTripId: string, b: Booking) => {
+      tripIdRef.current = targetTripId;
 
-        // Fetch existing live locations immediately so occupants see positions right away
-        liveApi
-          .getLocations(b.trip_id)
-          .then((existingLocs) => {
-            if (!isMountedRef.current || !existingLocs) return;
-            if (existingLocs.length > 0) {
-              setLocations(existingLocs);
+      liveApi
+        .getLocations(targetTripId)
+        .then((existingLocs) => {
+          if (!isMountedRef.current || !existingLocs) return;
+          if (existingLocs.length > 0) {
+            setLocations(existingLocs);
+          }
+        })
+        .catch(() => {});
+
+      if (!b.helmet_checked_at && b.status === 'started') {
+        setHelmetModalVisible(true);
+      }
+
+      const hour = new Date().getHours();
+      const isNight = hour >= 21 || hour < 5;
+      if (isNight && user?.gender === 'female' && !nightChecked) {
+        setNightModalVisible(true);
+      }
+    },
+    [user?.gender, nightChecked],
+  );
+
+  // ── Load booking or trip ──────────────────────────────────
+  useEffect(() => {
+    isMountedRef.current = true;
+    let active = true;
+
+    async function loadData() {
+      try {
+        setLoading(true);
+
+        // Option 1: Direct bookingId provided
+        if (bookingIdParam) {
+          const b = await bookingApi.getById(bookingIdParam);
+          if (!active) return;
+          setBooking(b);
+          setupLiveForRide(b.trip_id, b);
+          return;
+        }
+
+        // Option 2: tripId provided
+        if (tripIdParam) {
+          // If passenger, check if they have a booking on this trip
+          try {
+            const myBookings = await bookingApi.mine();
+            const matched = myBookings.find(
+              (b) => b.trip_id === tripIdParam && !['cancelled', 'declined'].includes(b.status),
+            );
+            if (matched && active) {
+              setBooking(matched);
+              setupLiveForRide(tripIdParam, matched);
+              return;
+            }
+          } catch {
+            // Not a passenger or failed to fetch bookings
+          }
+
+          // Otherwise load trip as driver
+          const t = await tripsApi.get(tripIdParam);
+          if (!active) return;
+
+          const tripAsBooking: Booking = {
+            id: `trip-${t.id}`,
+            trip_id: t.id,
+            passenger_id: '',
+            rider_id: t.rider_id,
+            status: t.status === 'open' ? 'accepted' : (t.status as any),
+            seats_booked: t.seats_total - (t.seats_available ?? 0),
+            pickup_label: t.origin_label,
+            pickup_lat: Number(t.origin_lat),
+            pickup_lng: Number(t.origin_lng),
+            dropoff_label: t.dest_label,
+            dropoff_lat: Number(t.dest_lat),
+            dropoff_lng: Number(t.dest_lng),
+            origin_label: t.origin_label,
+            dest_label: t.dest_label,
+            origin_lat: Number(t.origin_lat),
+            origin_lng: Number(t.origin_lng),
+            dest_lat: Number(t.dest_lat),
+            dest_lng: Number(t.dest_lng),
+            route_geojson: (t as any).route_geojson ?? null,
+            depart_at: t.depart_at,
+            rider_name: (t as any).rider_name || user?.name || 'Rider',
+            rider_trust: 50,
+            vehicle_make: (t as any).vehicle_name || 'Vehicle',
+            vehicle_model: '',
+            plate_number: '',
+            fare_share: t.fare_set,
+            ride_code: null,
+            created_at: t.created_at,
+            started_at: null,
+            completed_at: null,
+            cancelled_at: null,
+            cancel_reason: null,
+            stopovers: t.stopovers,
+          };
+
+          setBooking(tripAsBooking);
+          setupLiveForRide(t.id, tripAsBooking);
+          return;
+        }
+
+        // Neither provided
+        if (active) {
+          Alert.alert('Error', 'No ride or trip ID was provided.');
+        }
+      } catch (err) {
+        console.warn('Failed to load ride data:', err);
+        if (active) {
+          Alert.alert('Error', 'Could not load ride details. Please try again.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadData();
+
+    return () => {
+      active = false;
+      isMountedRef.current = false;
+    };
+  }, [bookingIdParam, tripIdParam, setupLiveForRide]);
+
+  // ── Periodic status poll (every 15s) ──────────────────────
+  useEffect(() => {
+    const isTripOnly = booking?.id?.startsWith('trip-');
+    if (booking?.status === 'completed') return;
+
+    const pollInterval = setInterval(() => {
+      if (!isMountedRef.current) return;
+
+      if (!isTripOnly && booking?.id) {
+        bookingApi
+          .getById(booking.id)
+          .then((b) => {
+            if (isMountedRef.current) setBooking(b);
+          })
+          .catch(() => {});
+      } else if (tripIdRef.current) {
+        tripsApi
+          .get(tripIdRef.current)
+          .then((t) => {
+            if (isMountedRef.current && booking) {
+              setBooking((prev) => (prev ? { ...prev, status: t.status as any } : null));
             }
           })
           .catch(() => {});
-
-        // Show helmet check modal if not yet checked
-        if (!b.helmet_checked_at && b.status === 'started') {
-          setHelmetModalVisible(true);
-        }
-
-        // Night rules: female passenger in night hours
-        const hour = new Date().getHours();
-        const isNight = hour >= 21 || hour < 5;
-        if (isNight && user?.gender === 'female' && !nightChecked) {
-          setNightModalVisible(true);
-        }
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, [bookingId, user?.gender, nightChecked]);
-
-  // Periodic status poll (every 15s) so state transitions (started, completed, boarded) sync
-  useEffect(() => {
-    if (!bookingId || booking?.status === 'completed') return;
-    const pollInterval = setInterval(() => {
-      bookingApi
-        .getById(bookingId)
-        .then((b) => {
-          if (isMountedRef.current) setBooking(b);
-        })
-        .catch(() => {});
+      }
     }, 15000);
 
     return () => clearInterval(pollInterval);
-  }, [bookingId, booking?.status]);
+  }, [booking?.id, booking?.status]);
 
   // ── Resolve user's location for emitting ─────────────────
   const getMyLocation = useCallback(async () => {
@@ -245,7 +357,6 @@ export default function LiveRideScreen() {
     });
 
     return () => {
-      isMountedRef.current = false;
       stopLocationEmit();
       leaveTrip(tripId);
       offLoc();
@@ -325,22 +436,31 @@ export default function LiveRideScreen() {
 
   // ── Helmet check ──────────────────────────────────────────
   const handleHelmetCheck = useCallback(async () => {
-    if (!bookingId) return;
+    const targetBookingId = booking?.id?.startsWith('trip-') ? null : booking?.id;
+    if (!targetBookingId) {
+      setHelmetChecked(true);
+      setHelmetModalVisible(false);
+      return;
+    }
     try {
-      await liveApi.helmetCheck(bookingId);
+      await liveApi.helmetCheck(targetBookingId);
       setHelmetChecked(true);
       setHelmetModalVisible(false);
     } catch {
       Alert.alert('Error', 'Could not log helmet check. Please try again.');
     }
-  }, [bookingId]);
+  }, [booking]);
 
   // ── Safe arrival ──────────────────────────────────────────
   const handleSafeArrival = useCallback(async () => {
-    if (!bookingId) return;
+    const targetBookingId = booking?.id?.startsWith('trip-') ? null : booking?.id;
+    if (!targetBookingId) {
+      setSafeArrivalDone(true);
+      return;
+    }
     setSafeArrivalLoading(true);
     try {
-      await liveApi.safeArrival(bookingId);
+      await liveApi.safeArrival(targetBookingId);
       setSafeArrivalDone(true);
       Alert.alert('✅ Safe Arrival', 'Your safe arrival has been logged. Thank you for riding with RideColab!');
     } catch {
@@ -348,12 +468,11 @@ export default function LiveRideScreen() {
     } finally {
       setSafeArrivalLoading(false);
     }
-  }, [bookingId]);
+  }, [booking]);
 
   // ── 1-Tap Turn-by-Turn Navigation (Rider) ─────────────────
   const handleNavigate = useCallback(() => {
     if (!booking) return;
-    // Route to passenger pickup first if not boarded, else destination
     const targetLat = !booking.boarded_at && booking.pickup_lat != null ? booking.pickup_lat : booking.dest_lat;
     const targetLng = !booking.boarded_at && booking.pickup_lng != null ? booking.pickup_lng : booking.dest_lng;
     if (targetLat == null || targetLng == null) return;
@@ -383,29 +502,33 @@ export default function LiveRideScreen() {
 
   // ── Verify Boarding OTP (Rider) ───────────────────────────
   const handleVerifyOtp = useCallback(async () => {
-    if (!bookingId) return;
+    const targetBookingId = booking?.id?.startsWith('trip-') ? null : booking?.id;
+    if (!targetBookingId) {
+      Alert.alert('No Passenger', 'There is no passenger booking attached to this trip yet.');
+      return;
+    }
     if (boardingOtpInput.trim().length !== 4) {
       Alert.alert('Invalid OTP', 'Please enter the 4-digit code provided by your passenger.');
       return;
     }
     setOtpVerifying(true);
     try {
-      await bookingApi.verifyBoardingOtp(bookingId, boardingOtpInput.trim());
+      await bookingApi.verifyBoardingOtp(targetBookingId, boardingOtpInput.trim());
       Alert.alert('Success ✅', 'Passenger boarding confirmed!');
       setOtpModalVisible(false);
       setBoardingOtpInput('');
-      const updated = await bookingApi.getById(bookingId);
+      const updated = await bookingApi.getById(targetBookingId);
       setBooking(updated);
     } catch (err) {
       Alert.alert('Verification Failed', (err as Error).message ?? 'Invalid OTP code.');
     } finally {
       setOtpVerifying(false);
     }
-  }, [bookingId, boardingOtpInput]);
+  }, [booking, boardingOtpInput]);
 
   // ── Complete Ride (Rider) ─────────────────────────────────
   const handleCompleteRide = useCallback(() => {
-    if (!bookingId) return;
+    const targetBookingId = booking?.id?.startsWith('trip-') ? null : booking?.id;
     Alert.alert(
       '🏁 Complete Ride?',
       'This will mark the ride as finished and prompt passenger for direct fuel cost sharing.',
@@ -416,9 +539,13 @@ export default function LiveRideScreen() {
           onPress: async () => {
             setCompleteLoading(true);
             try {
-              const updated = await bookingApi.complete(bookingId);
-              setBooking(updated);
-              Alert.alert('🎉 Ride Completed', 'Trip completed successfully! Please rate your passenger.');
+              if (targetBookingId) {
+                const updated = await bookingApi.complete(targetBookingId);
+                setBooking(updated);
+              } else {
+                setBooking((prev) => (prev ? { ...prev, status: 'completed' } : null));
+              }
+              Alert.alert('🎉 Ride Completed', 'Trip completed successfully! Please rate your co-travelers.');
             } catch (err) {
               Alert.alert('Error', (err as Error).message ?? 'Could not complete ride.');
             } finally {
@@ -428,7 +555,7 @@ export default function LiveRideScreen() {
         },
       ],
     );
-  }, [bookingId]);
+  }, [booking]);
 
   // ── UPI Direct Payment (Passenger) ────────────────────────
   const doUpiPay = useCallback(() => {
@@ -463,11 +590,29 @@ export default function LiveRideScreen() {
   }, [booking]);
 
   // ─────────────────────────────────────────────────────────
-  if (loading || !booking) {
+  if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: c.background }]}>
         <ActivityIndicator size="large" color={c.accent} />
         <Text style={[styles.loadingText, { color: c.textSecondary }]}>Loading live ride…</Text>
+      </View>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <View style={[styles.centered, { backgroundColor: c.background, padding: 24 }]}>
+        <Text style={{ fontSize: 44, marginBottom: 8 }}>🔍</Text>
+        <Text style={[styles.completedTitle, { color: c.text }]}>Ride Not Found</Text>
+        <Text style={[styles.completedSub, { color: c.textSecondary, textAlign: 'center' }]}>
+          Could not find active ride details. Please return to your activity list.
+        </Text>
+        <TouchableOpacity
+          style={[styles.compActionBtn, { backgroundColor: c.accent, marginTop: 12, paddingHorizontal: 24 }]}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.compActionBtnText}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -706,7 +851,7 @@ export default function LiveRideScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Rider: 1-tap Navigation */}
+          {/* Rider: 1-tap Turn-by-Turn Navigation */}
           {isRider && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: c.primary }]}

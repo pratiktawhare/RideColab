@@ -127,7 +127,16 @@ function DriverTripCard({
       <View style={styles.driverActionRow}>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: c.accent }]}
-          onPress={() => router.push({ pathname: '/live-ride', params: { tripId: trip.id } })}
+          onPress={() => {
+            const activeBooking = acceptedPassengers[0] ?? bookings[0];
+            router.push({
+              pathname: '/live-ride',
+              params: {
+                tripId: trip.id,
+                ...(activeBooking ? { bookingId: activeBooking.id } : {}),
+              },
+            });
+          }}
         >
           <Text style={styles.actionBtnText}>🚗 Live Ride</Text>
         </TouchableOpacity>
@@ -339,10 +348,15 @@ function PassengerTicketCard({
 
       {/* Quick Action Footer */}
       <View style={styles.ticketActionRow}>
-        {booking.status === 'started' ? (
+        {booking.status === 'started' || booking.status === 'accepted' ? (
           <TouchableOpacity
             style={[styles.ticketActionBtn, { backgroundColor: c.accent, flex: 1 }]}
-            onPress={() => router.push({ pathname: '/live-ride', params: { tripId: booking.trip_id } })}
+            onPress={() =>
+              router.push({
+                pathname: '/live-ride',
+                params: { bookingId: booking.id, tripId: booking.trip_id },
+              })
+            }
           >
             <Text style={styles.actionBtnText}>📍 Live Ride Map</Text>
           </TouchableOpacity>

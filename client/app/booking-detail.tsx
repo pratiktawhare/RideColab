@@ -521,7 +521,7 @@ export default function BookingDetailScreen() {
           {booking.status === 'started' && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: '#3B82F6', marginTop: 0 }]}
-              onPress={() => router.push(`/live-ride?bookingId=${booking.id}`)}
+              onPress={() => router.push(`/live-ride?bookingId=${booking.id}&tripId=${booking.trip_id}`)}
             >
               <Text style={styles.actionBtnText}>📍 Open Live Ride Map</Text>
             </TouchableOpacity>

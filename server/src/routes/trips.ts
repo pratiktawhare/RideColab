@@ -339,6 +339,8 @@ router.get('/:id', authenticate, async (req: Request, res: Response, next: NextF
   try {
     const res2 = await query(
       `SELECT t.*,
+              ST_AsGeoJSON(t.route) AS route_geojson,
+              COALESCE(t.stopovers, '[]'::jsonb) AS stopovers,
               vc.make || ' ' || vc.model AS vehicle_name,
               vc.type AS vehicle_type,
               vc.fuel_type,
